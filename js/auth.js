@@ -3,6 +3,7 @@ import { initApp } from './app.js';
 import { fetchMyProfile, createProfile, touchLastSeen } from './profile.js';
 import { resetOnboardingForm, onOnboardingSubmit } from './onboarding.js';
 import { initSupervisor } from './supervisor.js';
+import { hasStashedSession, clearStashedSession, restoreStashedSession } from './session-switch.js';
 
 const authGate = document.getElementById('auth-gate');
 const onboardingGate = document.getElementById('onboarding-gate');
@@ -13,6 +14,7 @@ const bannedLogoutBtn = document.getElementById('banned-logout');
 const appStage = document.getElementById('app-stage');
 const supervisorStage = document.getElementById('supervisor-stage');
 const modeSwitchBtn = document.getElementById('mode-switch');
+const returnSupervisorBtn = document.getElementById('return-supervisor-btn');
 
 const form = document.getElementById('auth-form');
 const emailInput = document.getElementById('auth-email');
@@ -131,6 +133,25 @@ modeSwitchBtn.addEventListener('click', () => {
   applyViewMode(currentProfile);
 });
 
+// Shown whenever a supervisor session is stashed (from the "log in as a
+// test account" shortcut) — visible regardless of which gate/account is
+// currently active, including the login screen itself. Cleared once we're
+// actually back on the supervisor's own account.
+function updateReturnButton(profile){
+  if (profile?.is_supervisor) clearStashedSession();
+  returnSupervisorBtn.classList.toggle('hidden', !hasStashedSession());
+}
+
+returnSupervisorBtn.addEventListener('click', async () => {
+  returnSupervisorBtn.disabled = true;
+  const { error } = await restoreStashedSession(supabase);
+  returnSupervisorBtn.disabled = false;
+  if (error) {
+    alert(`Erreur : ${error.message}`);
+    updateReturnButton(null);
+  }
+});
+
 async function enterApp(session){
   let profile;
   try {
@@ -139,6 +160,8 @@ async function enterApp(session){
     console.error('Impossible de charger le profil', err);
     return;
   }
+
+  updateReturnButton(profile);
 
   if (!profile) {
     hideAllGates();
@@ -179,6 +202,7 @@ function handleSession(session){
     enterApp(session);
   } else {
     viewMode = 'user';
+    updateReturnButton(null);
     hideAllGates();
     authGate.classList.remove('hidden');
     form.reset();

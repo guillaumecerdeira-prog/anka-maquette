@@ -1,4 +1,5 @@
 import { supabase } from './supabase-client.js';
+import { stashCurrentSession } from './session-switch.js';
 
 let currentUserId = null;
 let contentEl = null;
@@ -368,7 +369,8 @@ async function renderLookup(){
   `;
 
   contentEl.querySelectorAll('[data-action="login-as-test"]').forEach(btn => btn.addEventListener('click', async () => {
-    if (!confirm(`Te connecter en tant que ${btn.dataset.email} ? Tu seras déconnecté·e de ton compte Superviseur (reconnecte-toi ensuite avec tes identifiants habituels pour y revenir).`)) return;
+    if (!confirm(`Te connecter en tant que ${btn.dataset.email} ? Un bouton "Revenir à mon compte" apparaîtra pour repasser sur ton compte Superviseur sans ressaisir ton mot de passe.`)) return;
+    await stashCurrentSession(supabase);
     const { error } = await supabase.auth.signInWithPassword({ email: btn.dataset.email, password: TEST_ACCOUNT_PASSWORD });
     if (error) alert(`Erreur : ${error.message}`);
   }));
