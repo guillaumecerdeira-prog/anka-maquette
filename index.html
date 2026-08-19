@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anka — Maquette</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="brandmark">
+  <svg viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="16" r="14.5" stroke="#b8834a" stroke-width="1.3"/>
+    <circle cx="16" cy="16" r="9" stroke="#2c3e4a" stroke-width="1.3" stroke-dasharray="2.4 3"/>
+  </svg>
+  <div>
+    <span>anka</span>
+    <small>maquette d'écrans</small>
+  </div>
+  <button class="mode-switch hidden" id="mode-switch" type="button" title="Basculer vers le mode Superviseur">
+    <svg class="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20c1.4-3.8 4.6-5.7 7.5-5.7s6.1 1.9 7.5 5.7"/></svg>
+    <svg class="icon-supervisor" viewBox="0 0 24 24" hidden><path d="M12 3.5 19 6.3v4.9c0 5.1-3.3 8.7-7 10-3.7-1.3-7-4.9-7-10V6.3L12 3.5Z"/><path d="M9 12l2 2 4-4"/></svg>
+  </button>
+</div>
+
+<div class="auth-wrap" id="auth-gate">
+  <div class="auth-card">
+    <p class="eyebrow">bienvenue</p>
+    <h1 id="auth-title">Connexion</h1>
+    <form id="auth-form" novalidate>
+      <label class="auth-field">
+        <span>Email</span>
+        <input type="email" id="auth-email" required autocomplete="email">
+      </label>
+      <label class="auth-field">
+        <span>Mot de passe</span>
+        <input type="password" id="auth-password" required minlength="6" autocomplete="current-password">
+      </label>
+      <p class="auth-error" id="auth-error" hidden></p>
+      <button type="submit" class="btn btn-primary" id="auth-submit">Se connecter</button>
+    </form>
+    <p class="auth-switch">
+      <span id="auth-switch-text">Pas encore de compte ?</span>
+      <button type="button" id="auth-switch-btn">Créer un compte</button>
+    </p>
+  </div>
+</div>
+
+<div class="auth-wrap hidden" id="onboarding-gate" style="width:440px">
+  <div class="auth-card">
+    <p class="eyebrow">dernière étape</p>
+    <h1>Crée ton profil</h1>
+    <form id="onboarding-form" novalidate>
+      <label class="auth-field">
+        <span>Prénom</span>
+        <input type="text" id="ob-name" required maxlength="40">
+      </label>
+      <label class="auth-field">
+        <span>Date de naissance</span>
+        <input type="date" id="ob-birthdate" required>
+      </label>
+
+      <p class="auth-field-label">Ton avatar</p>
+      <div class="avatar-picker" id="ob-avatar-picker">
+        <button type="button" class="avatar-option av-a active" data-style="av-a"><div class="avatar-shape"></div></button>
+        <button type="button" class="avatar-option av-b" data-style="av-b"><div class="avatar-shape"></div></button>
+        <button type="button" class="avatar-option av-c" data-style="av-c"><div class="avatar-shape"></div></button>
+        <button type="button" class="avatar-option av-d" data-style="av-d"><div class="avatar-shape"></div></button>
+      </div>
+
+      <p class="auth-field-label">Centres d'intérêt</p>
+      <div class="interest-picker" id="ob-interests"></div>
+
+      <p class="auth-field-label">Quelques mots <span class="optional-tag">(optionnel)</span></p>
+      <div id="ob-prompts"></div>
+
+      <p class="auth-error" id="ob-error" hidden></p>
+      <button type="submit" class="btn btn-primary" id="ob-submit">Créer mon profil</button>
+    </form>
+  </div>
+</div>
+
+<div class="auth-wrap hidden" id="banned-gate">
+  <div class="auth-card">
+    <p class="eyebrow">accès restreint</p>
+    <h1 id="banned-title">Compte suspendu</h1>
+    <p class="profile-caption" id="banned-message" style="text-align:left;max-width:none;margin:0 0 20px"></p>
+    <button type="button" class="btn btn-ghost" id="banned-logout" style="width:100%">Se déconnecter</button>
+  </div>
+</div>
+
+<div class="stage hidden" id="app-stage">
+  <svg class="rings" viewBox="0 0 540 940" fill="none">
+    <circle cx="270" cy="470" r="330" stroke="#b8834a" stroke-opacity="0.10" stroke-width="1"/>
+    <circle cx="270" cy="470" r="380" stroke="#6e8c7c" stroke-opacity="0.10" stroke-width="1" stroke-dasharray="3 6"/>
+  </svg>
+
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen">
+
+      <!-- HEADER (dynamic) -->
+      <div class="app-header" id="header">
+        <p class="eyebrow">mercredi · à ton rythme</p>
+        <h1>Bonjour, Léa</h1>
+      </div>
+
+      <!-- CONTENT (dynamic) -->
+      <div class="content" id="content"></div>
+
+      <!-- TAB BAR -->
+      <div class="tabbar">
+        <button class="tab active" data-tab="accueil">
+          <svg viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9"/></svg>
+          Accueil
+        </button>
+        <button class="tab" data-tab="forum">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v10H8l-4 4V5Z"/></svg>
+          Forum
+        </button>
+        <button class="tab" data-tab="defis">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="var(--ink-soft)"/></svg>
+          Défis
+        </button>
+        <button class="tab" data-tab="profil">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20c1.4-3.8 4.6-5.7 7.5-5.7s6.1 1.9 7.5 5.7"/></svg>
+          Profil
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <p class="caption">Fais glisser entre les onglets pour explorer les écrans clés.</p>
+</div>
+
+<div class="supervisor-stage hidden" id="supervisor-stage">
+  <div class="supervisor-panel">
+    <div class="supervisor-header">
+      <p class="eyebrow">mode superviseur</p>
+      <h1>Anka — Supervision</h1>
+    </div>
+
+    <div class="supervisor-tabbar">
+      <button class="stab active" data-stab="overview">Vue d'ensemble</button>
+      <button class="stab" data-stab="content">Contenu</button>
+      <button class="stab" data-stab="moderation">Modération</button>
+      <button class="stab" data-stab="lookup">Profils</button>
+    </div>
+
+    <div class="supervisor-content" id="supervisor-content"></div>
+  </div>
+</div>
+
+</body>
+<script type="module" src="js/auth.js"></script>
+</html>
