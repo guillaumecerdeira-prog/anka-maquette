@@ -4,6 +4,10 @@ import { fetchFriendshipStatus, sendFriendRequest, respondToFriendRequest, remov
 import { fetchIncomingConnectionRequest, respondToConnectionRequest } from './connections.js';
 import { fetchFacePhotoUrl } from './face-photo.js';
 import { reportButtonHtml, attachReportHandlers } from './reports.js';
+import { fetchConversationBetween, startOpenDmConversation } from './messaging.js';
+import { sendDmAccessRequest, fetchOutgoingDmRequestStatus } from './dm-requests.js';
+import { fetchBlockedIds, blockProfile, unblockProfile } from './blocks.js';
+import { renderConversationThread } from './conversation-thread.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -32,18 +36,42 @@ function friendActionHtml(friendship, myId){
   return `<button class="btn btn-ghost" id="friend-remove" data-id="${friendship.id}">Amis · retirer</button>`;
 }
 
+function messageActionHtml(conversation, theirProfile, outgoingRequest, isBlocked){
+  if (isBlocked) return '';
+  if (conversation) {
+    return `<button class="btn btn-ghost" id="open-conversation-btn">${conversation.status === 'blocked' ? 'Voir la conversation (bloquée)' : 'Voir la conversation'}</button>`;
+  }
+  if (theirProfile.dm_open) {
+    return `<button class="btn btn-ghost" id="start-dm-btn">Envoyer un message</button>`;
+  }
+  if (outgoingRequest?.status === 'pending') {
+    return `<button class="btn btn-ghost" disabled>Demande de message envoyée</button>`;
+  }
+  return '';
+}
+
 export async function renderProfileDetail(container, myProfile, theirId, onBack){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [theirProfile, friendship, wall, incomingConnection, facePhotoUrl] = await Promise.all([
+  const [theirProfile, friendship, wall, incomingConnection, facePhotoUrl, conversation, outgoingRequest, blockedIds] = await Promise.all([
     fetchProfileById(theirId),
     fetchFriendshipStatus(myProfile.id, theirId),
     fetchWall(theirId),
     fetchIncomingConnectionRequest(myProfile.id, theirId),
-    fetchFacePhotoUrl(theirId)
+    fetchFacePhotoUrl(theirId),
+    fetchConversationBetween(myProfile.id, theirId),
+    fetchOutgoingDmRequestStatus(myProfile.id, theirId),
+    fetchBlockedIds(myProfile.id)
   ]);
 
   if (!theirProfile) { container.innerHTML = `<p class="empty-hint">Profil introuvable.</p>`; return; }
+
+  const iBlockedThem = blockedIds.includes(theirId);
+  // No direct message action, and no per-post "message privé" offer either,
+  // once a conversation already exists or DMs are open — that top-level
+  // action already covers it; the per-content request path exists
+  // specifically for the "DM closed, no relationship yet" case.
+  const canMessageDirectly = !!conversation || theirProfile.dm_open;
 
   const chips = theirProfile.interests.map(i => `<span class="chip">${escapeHtml(i.name)}</span>`).join('')
     || `<span class="empty-hint">Aucun centre d'intérêt renseigné.</span>`;
@@ -62,7 +90,10 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
       <p class="prompt-a">${escapeHtml(p.body)}</p>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
         <p class="empty-hint" style="margin:0">${p.visibility === 'friends' ? 'Amis uniquement' : 'Public'} · ${new Date(p.created_at).toLocaleDateString('fr-FR')}</p>
-        ${reportButtonHtml('post', p.id)}
+        <div style="display:flex;gap:8px">
+          ${!canMessageDirectly && !iBlockedThem ? `<button class="btn-sm" data-action="dm-request" data-context-type="post" data-context-id="${p.id}">Message privé</button>` : ''}
+          ${reportButtonHtml('post', p.id)}
+        </div>
       </div>
     </div>
   `).join('') : `<p class="empty-hint">Rien sur ce mur pour l'instant.</p>`;
@@ -99,6 +130,10 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
         <button class="btn btn-primary" id="connection-accept" data-id="${incomingConnection.id}">Accepter le bonjour</button>
       </div>
     ` : ''}
+    <div class="card-actions" style="margin-top:10px">
+      ${messageActionHtml(conversation, theirProfile, outgoingRequest, iBlockedThem)}
+      <button type="button" class="btn btn-ghost" id="block-toggle-btn">${iBlockedThem ? 'Débloquer' : 'Bloquer'}</button>
+    </div>
     <div class="chips" style="margin:16px 0">${chips}</div>
     <p class="section-label">Quelques mots</p>
     ${prompts}
@@ -151,6 +186,49 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
       rerender();
     } catch (err) {
       alert(`Erreur : ${err.message}`);
+    }
+  });
+
+  document.getElementById('open-conversation-btn')?.addEventListener('click', () => {
+    renderConversationThread(container, myProfile, { ...conversation, otherProfile: theirProfile }, rerender);
+  });
+  document.getElementById('start-dm-btn')?.addEventListener('click', async (event) => {
+    event.target.disabled = true;
+    try {
+      const conversationId = await startOpenDmConversation(theirId);
+      renderConversationThread(container, myProfile, { id: conversationId, status: 'active', otherProfile: theirProfile }, rerender);
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+      event.target.disabled = false;
+    }
+  });
+  container.querySelectorAll('[data-action="dm-request"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Envoyer une demande de message à ${theirProfile.display_name} ?`)) return;
+      btn.disabled = true;
+      try {
+        await sendDmAccessRequest(theirId, btn.dataset.contextType, btn.dataset.contextId);
+        alert('Demande envoyée.');
+        rerender();
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
+        btn.disabled = false;
+      }
+    });
+  });
+  document.getElementById('block-toggle-btn')?.addEventListener('click', async (event) => {
+    event.target.disabled = true;
+    try {
+      if (iBlockedThem) {
+        await unblockProfile(theirId);
+      } else {
+        if (!confirm(`Bloquer ${theirProfile.display_name} ? Plus aucun nouveau message ne pourra être échangé tant que le blocage tient.`)) { event.target.disabled = false; return; }
+        await blockProfile(theirId);
+      }
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+      event.target.disabled = false;
     }
   });
 }

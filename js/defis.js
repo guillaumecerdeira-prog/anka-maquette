@@ -1,5 +1,8 @@
 import { supabase } from './supabase-client.js';
 import { reportButtonHtml, attachReportHandlers } from './reports.js';
+import { fetchConversationBetween, startOpenDmConversation } from './messaging.js';
+import { sendDmAccessRequest } from './dm-requests.js';
+import { renderConversationThread } from './conversation-thread.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -47,7 +50,12 @@ export async function renderDefis(container, myProfile){
           <p class="response-name">${escapeHtml(r.profiles?.display_name || '—')}</p>
           <p class="response-text">${escapeHtml(r.text || '')}</p>
         </div>
-        ${r.profile_id !== myProfile.id ? reportButtonHtml('challenge_response', r.id) : ''}
+        ${r.profile_id !== myProfile.id ? `
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn-sm" data-action="message-response" data-profile-id="${r.profile_id}" data-response-id="${r.id}">Message privé</button>
+            ${reportButtonHtml('challenge_response', r.id)}
+          </div>
+        ` : ''}
       </div>
     `).join('') : `<p class="empty-hint">Aucune réponse pour l'instant.</p>`;
 
@@ -68,6 +76,36 @@ export async function renderDefis(container, myProfile){
   }).join('');
 
   attachReportHandlers(container, myProfile);
+
+  container.querySelectorAll('[data-action="message-response"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const targetProfileId = btn.dataset.profileId;
+      btn.disabled = true;
+      try {
+        const conversation = await fetchConversationBetween(myProfile.id, targetProfileId);
+        if (conversation) {
+          const { data: theirProfile } = await supabase.from('profiles').select('id, display_name, avatar_style').eq('id', targetProfileId).single();
+          renderConversationThread(container, myProfile, { ...conversation, otherProfile: theirProfile }, () => renderDefis(container, myProfile));
+          return;
+        }
+
+        const { data: theirProfile } = await supabase.from('profiles').select('id, display_name, avatar_style, dm_open').eq('id', targetProfileId).single();
+        if (theirProfile?.dm_open) {
+          const conversationId = await startOpenDmConversation(targetProfileId);
+          renderConversationThread(container, myProfile, { id: conversationId, status: 'active', otherProfile: theirProfile }, () => renderDefis(container, myProfile));
+          return;
+        }
+
+        if (!confirm(`Envoyer une demande de message à ${theirProfile?.display_name || 'cette personne'} ?`)) { btn.disabled = false; return; }
+        await sendDmAccessRequest(targetProfileId, 'challenge_response', btn.dataset.responseId);
+        alert('Demande envoyée.');
+        btn.disabled = false;
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
+        btn.disabled = false;
+      }
+    });
+  });
 
   container.querySelectorAll('.defi-response-form').forEach(form => {
     form.addEventListener('submit', async (event) => {

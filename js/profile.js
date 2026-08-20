@@ -50,7 +50,7 @@ export async function fetchProfileById(profileId){
   const { data, error } = await supabase
     .from('profiles')
     .select(`
-      id, display_name, birth_date, avatar_style, created_at,
+      id, display_name, birth_date, avatar_style, dm_open, created_at,
       profile_interests ( interests ( id, name ) ),
       profile_prompts ( id, question, answer, position )
     `)
