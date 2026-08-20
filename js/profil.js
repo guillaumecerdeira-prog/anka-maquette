@@ -1,4 +1,4 @@
-import { setDmOpen } from './profile.js';
+import { setDmOpen, updatePromptAnswer } from './profile.js';
 import { fetchWall, createPost, deletePost } from './posts.js';
 import { fetchIncomingFriendRequests, respondToFriendRequest, fetchMyFriends } from './friends.js';
 import { renderProfileDetail } from './profile-view.js';
@@ -37,9 +37,17 @@ export async function renderProfil(container, myProfile, { signOut }){
 
   const prompts = myProfile.prompts.length
     ? myProfile.prompts.map(p => `
-        <div class="prompt-card">
+        <div class="prompt-card" data-prompt-id="${p.id}">
           <p class="prompt-q">${escapeHtml(p.question)}</p>
-          <p class="prompt-a">${escapeHtml(p.answer)}</p>
+          <p class="prompt-a" data-role="prompt-answer">${escapeHtml(p.answer)}</p>
+          <div class="prompt-edit-form" hidden>
+            <textarea maxlength="240" style="width:100%;min-height:60px;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);resize:vertical;margin:8px 0">${escapeHtml(p.answer)}</textarea>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn-sm" data-action="save-prompt">Enregistrer</button>
+              <button type="button" class="btn-sm" data-action="cancel-prompt">Annuler</button>
+            </div>
+          </div>
+          <button type="button" class="btn-sm" data-action="edit-prompt" style="margin-top:8px">Modifier</button>
         </div>
       `).join('')
     : `<p class="empty-hint">Pas encore de réponse ajoutée.</p>`;
@@ -166,6 +174,45 @@ export async function renderProfil(container, myProfile, { signOut }){
         rerender();
       } catch (err) {
         alert(`Erreur : ${err.message}`);
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-action="edit-prompt"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.prompt-card');
+      card.querySelector('[data-role="prompt-answer"]').hidden = true;
+      card.querySelector('.prompt-edit-form').hidden = false;
+      btn.hidden = true;
+    });
+  });
+
+  container.querySelectorAll('[data-action="cancel-prompt"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.prompt-card');
+      card.querySelector('.prompt-edit-form').hidden = true;
+      card.querySelector('[data-role="prompt-answer"]').hidden = false;
+      card.querySelector('[data-action="edit-prompt"]').hidden = false;
+    });
+  });
+
+  container.querySelectorAll('[data-action="save-prompt"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const card = btn.closest('.prompt-card');
+      const promptId = card.dataset.promptId;
+      const textarea = card.querySelector('textarea');
+      const answer = textarea.value.trim();
+      if (!answer) { alert('La réponse ne peut pas être vide.'); return; }
+      btn.disabled = true;
+      try {
+        await updatePromptAnswer(promptId, answer);
+        const prompt = myProfile.prompts.find(p => p.id === promptId);
+        if (prompt) prompt.answer = answer;
+        rerender();
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
+      } finally {
+        btn.disabled = false;
       }
     });
   });

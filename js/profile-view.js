@@ -1,6 +1,7 @@
 import { fetchProfileById } from './profile.js';
 import { fetchWall } from './posts.js';
 import { fetchFriendshipStatus, sendFriendRequest, respondToFriendRequest, removeFriendship } from './friends.js';
+import { reportButtonHtml, attachReportHandlers } from './reports.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -55,7 +56,10 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
   const wallHtml = wall.length ? wall.map(p => `
     <div class="prompt-card">
       <p class="prompt-a">${escapeHtml(p.body)}</p>
-      <p class="empty-hint" style="margin-top:6px">${p.visibility === 'friends' ? 'Amis uniquement' : 'Public'} · ${new Date(p.created_at).toLocaleDateString('fr-FR')}</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <p class="empty-hint" style="margin:0">${p.visibility === 'friends' ? 'Amis uniquement' : 'Public'} · ${new Date(p.created_at).toLocaleDateString('fr-FR')}</p>
+        ${reportButtonHtml('post', p.id)}
+      </div>
     </div>
   `).join('') : `<p class="empty-hint">Rien sur ce mur pour l'instant.</p>`;
 
@@ -77,6 +81,8 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
   `;
 
   const rerender = () => renderProfileDetail(container, myProfile, theirId, onBack);
+
+  attachReportHandlers(container, myProfile);
 
   document.getElementById('back-btn').addEventListener('click', onBack);
   document.getElementById('friend-action')?.addEventListener('click', async (event) => {

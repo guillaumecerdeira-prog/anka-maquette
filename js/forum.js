@@ -1,5 +1,6 @@
 import { supabase } from './supabase-client.js';
 import { fetchInterestsCatalog } from './profile.js';
+import { reportButtonHtml, attachReportHandlers } from './reports.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -87,8 +88,8 @@ async function renderThreadDetail(container, myProfile, threadId){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
   const [{ data: thread, error: threadError }, { data: posts, error: postsError }] = await Promise.all([
-    supabase.from('forum_threads').select('id, title, created_at, interests(name), profiles(display_name)').eq('id', threadId).maybeSingle(),
-    supabase.from('forum_posts').select('id, body, created_at, profiles(display_name, avatar_style)').eq('thread_id', threadId).order('created_at', { ascending: true })
+    supabase.from('forum_threads').select('id, title, created_at, profile_id, interests(name), profiles(display_name)').eq('id', threadId).maybeSingle(),
+    supabase.from('forum_posts').select('id, body, created_at, profile_id, profiles(display_name, avatar_style)').eq('thread_id', threadId).order('created_at', { ascending: true })
   ]);
 
   if (threadError || !thread) { container.innerHTML = `<p class="empty-hint">Fil introuvable.</p>`; return; }
@@ -96,17 +97,21 @@ async function renderThreadDetail(container, myProfile, threadId){
   const postRows = (posts || []).length ? posts.map(p => `
     <div class="response-row">
       <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0"><div class="avatar-shape"></div></div>
-      <div>
+      <div style="flex:1;min-width:0">
         <p class="response-name">${escapeHtml(p.profiles?.display_name || '—')} <span class="empty-hint">· ${fmtDate(p.created_at)}</span></p>
         <p class="response-text">${escapeHtml(p.body)}</p>
       </div>
+      ${p.profile_id !== myProfile.id ? reportButtonHtml('forum_post', p.id) : ''}
     </div>
   `).join('') : (postsError ? `<p class="empty-hint">Erreur : ${escapeHtml(postsError.message)}</p>` : `<p class="empty-hint">Aucune réponse pour l'instant — sois le premier·ère.</p>`);
 
   container.innerHTML = `
     <button class="btn-sm" id="back-to-list" style="margin-bottom:14px">← Retour</button>
     <p class="thread-tag">${escapeHtml(thread.interests?.name || '—')}</p>
-    <h2 style="font-family:var(--font-display);font-weight:500;font-size:18px;margin:6px 0 3px">${escapeHtml(thread.title)}</h2>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin:6px 0 3px">
+      <h2 style="font-family:var(--font-display);font-weight:500;font-size:18px;margin:0">${escapeHtml(thread.title)}</h2>
+      ${thread.profile_id !== myProfile.id ? reportButtonHtml('forum_thread', thread.id) : ''}
+    </div>
     <p class="empty-hint" style="margin-bottom:16px">par ${escapeHtml(thread.profiles?.display_name || '—')} · ${fmtDate(thread.created_at)}</p>
 
     <div class="admin-list">${postRows}</div>
@@ -116,6 +121,8 @@ async function renderThreadDetail(container, myProfile, threadId){
       <button type="submit" class="btn btn-primary" style="margin-top:8px;width:100%">Répondre</button>
     </form>
   `;
+
+  attachReportHandlers(container, myProfile);
 
   document.getElementById('back-to-list').addEventListener('click', () => renderThreadList(container, myProfile));
   document.getElementById('reply-form').addEventListener('submit', async (event) => {

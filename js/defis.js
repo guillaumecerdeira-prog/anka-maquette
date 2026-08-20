@@ -1,4 +1,5 @@
 import { supabase } from './supabase-client.js';
+import { reportButtonHtml, attachReportHandlers } from './reports.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -27,7 +28,7 @@ export async function renderDefis(container, myProfile){
 
   const { data: responses, error: responsesError } = await supabase
     .from('challenge_responses')
-    .select('id, challenge_id, text, created_at, profiles(display_name, avatar_style)')
+    .select('id, challenge_id, text, created_at, profile_id, profiles(display_name, avatar_style)')
     .in('challenge_id', currentChallenges.map(c => c.id))
     .order('created_at', { ascending: false });
 
@@ -42,10 +43,11 @@ export async function renderDefis(container, myProfile){
     const rows = list.length ? list.map(r => `
       <div class="response-row">
         <div class="avatar ${escapeHtml(r.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0"><div class="avatar-shape"></div></div>
-        <div>
+        <div style="flex:1;min-width:0">
           <p class="response-name">${escapeHtml(r.profiles?.display_name || '—')}</p>
           <p class="response-text">${escapeHtml(r.text || '')}</p>
         </div>
+        ${r.profile_id !== myProfile.id ? reportButtonHtml('challenge_response', r.id) : ''}
       </div>
     `).join('') : `<p class="empty-hint">Aucune réponse pour l'instant.</p>`;
 
@@ -64,6 +66,8 @@ export async function renderDefis(container, myProfile){
       <div class="admin-list" style="margin-bottom:22px">${rows}</div>
     `;
   }).join('');
+
+  attachReportHandlers(container, myProfile);
 
   container.querySelectorAll('.defi-response-form').forEach(form => {
     form.addEventListener('submit', async (event) => {

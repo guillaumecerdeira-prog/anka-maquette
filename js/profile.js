@@ -88,6 +88,11 @@ export async function createProfile(userId, { displayName, birthDate, avatarStyl
   }
 }
 
+export async function updatePromptAnswer(promptId, answer){
+  const { error } = await supabase.from('profile_prompts').update({ answer }).eq('id', promptId);
+  if (error) throw error;
+}
+
 export async function setDmOpen(userId, dmOpen){
   const { error } = await supabase.from('profiles').update({ dm_open: dmOpen }).eq('id', userId);
   if (error) throw error;
