@@ -2,6 +2,7 @@ import { fetchProfileById } from './profile.js';
 import { fetchWall } from './posts.js';
 import { fetchFriendshipStatus, sendFriendRequest, respondToFriendRequest, removeFriendship } from './friends.js';
 import { fetchIncomingConnectionRequest, respondToConnectionRequest } from './connections.js';
+import { fetchFacePhotoUrl } from './face-photo.js';
 import { reportButtonHtml, attachReportHandlers } from './reports.js';
 
 function escapeHtml(str){
@@ -34,11 +35,12 @@ function friendActionHtml(friendship, myId){
 export async function renderProfileDetail(container, myProfile, theirId, onBack){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [theirProfile, friendship, wall, incomingConnection] = await Promise.all([
+  const [theirProfile, friendship, wall, incomingConnection, facePhotoUrl] = await Promise.all([
     fetchProfileById(theirId),
     fetchFriendshipStatus(myProfile.id, theirId),
     fetchWall(theirId),
-    fetchIncomingConnectionRequest(myProfile.id, theirId)
+    fetchIncomingConnectionRequest(myProfile.id, theirId),
+    fetchFacePhotoUrl(theirId)
   ]);
 
   if (!theirProfile) { container.innerHTML = `<p class="empty-hint">Profil introuvable.</p>`; return; }
@@ -68,11 +70,27 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
   container.innerHTML = `
     <button class="btn-sm" id="back-btn" style="margin-bottom:14px">← Retour</button>
     <div class="profile-hero">
-      <div class="profile-avatar-wrap">
-        <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
-        <div class="profile-avatar ${escapeHtml(theirProfile.avatar_style)}"><div class="avatar-shape"></div></div>
+      <div class="profile-photos">
+        <div class="profile-photo-slot">
+          <div class="profile-avatar-wrap">
+            <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
+            <div class="profile-avatar ${escapeHtml(theirProfile.avatar_style)}"><div class="avatar-shape"></div></div>
+          </div>
+          <p class="profile-photo-label">Avatar</p>
+        </div>
+        <div class="profile-photo-slot">
+          <div class="profile-avatar-wrap">
+            <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
+            <div class="profile-avatar ${facePhotoUrl ? 'profile-face-circle' : 'profile-face-locked'}">
+              ${facePhotoUrl
+                ? `<img src="${facePhotoUrl}" alt="Visage de ${escapeHtml(theirProfile.display_name)}">`
+                : `<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`}
+            </div>
+          </div>
+          <p class="profile-photo-label">${facePhotoUrl ? 'Visage' : 'Visage caché'}</p>
+        </div>
       </div>
-      <p class="profile-name">${escapeHtml(theirProfile.display_name)}, ${computeAge(theirProfile.birth_date)} ans</p>
+      <p class="profile-name" style="margin-top:14px">${escapeHtml(theirProfile.display_name)}, ${computeAge(theirProfile.birth_date)} ans</p>
     </div>
     <div class="card-actions">${friendActionHtml(friendship, myProfile.id)}</div>
     ${incomingConnection ? `
