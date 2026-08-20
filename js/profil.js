@@ -3,6 +3,7 @@ import { fetchWall, createPost, deletePost } from './posts.js';
 import { fetchIncomingFriendRequests, respondToFriendRequest, fetchMyFriends } from './friends.js';
 import { renderProfileDetail } from './profile-view.js';
 import { fetchFacePhotoUrl, uploadFacePhoto } from './face-photo.js';
+import { fetchRevealedTo, revealFaceTo, unrevealFaceFrom } from './face-reveals.js';
 
 const AVATAR_STYLES = ['av-a', 'av-b', 'av-c', 'av-d'];
 const MAX_FACE_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -28,13 +29,15 @@ function renderPostRow(post){
 export async function renderProfil(container, myProfile, { signOut }){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [wall, incomingFriends, friends, interestsCatalog, facePhotoUrl] = await Promise.all([
+  const [wall, incomingFriends, friends, interestsCatalog, facePhotoUrl, revealedTo] = await Promise.all([
     fetchWall(myProfile.id),
     fetchIncomingFriendRequests(myProfile.id),
     fetchMyFriends(myProfile.id),
     fetchInterestsCatalog(),
-    fetchFacePhotoUrl(myProfile.id)
+    fetchFacePhotoUrl(myProfile.id),
+    fetchRevealedTo(myProfile.id)
   ]);
+  const revealedIds = new Set(revealedTo);
 
   const rerender = () => renderProfil(container, myProfile, { signOut });
 
@@ -124,9 +127,20 @@ export async function renderProfil(container, myProfile, { signOut }){
     <div class="setting-row">
       <div>
         <p class="setting-label">Visage débloqué</p>
-        <p class="setting-sub">Pour ${myProfile.faceRevealCount} personne${myProfile.faceRevealCount === 1 ? '' : 's'}</p>
+        <p class="setting-sub" id="face-reveal-count">Pour ${myProfile.faceRevealCount} personne${myProfile.faceRevealCount === 1 ? '' : 's'}</p>
       </div>
-      <span class="chip">Gérer</span>
+      <button type="button" class="chip" id="manage-reveals-btn" style="cursor:pointer;background:none;border:1px solid var(--line)">Gérer</button>
+    </div>
+    <div id="reveal-manage-panel" hidden style="margin-bottom:11px">
+      ${friends.length ? friends.map(f => `
+        <div class="setting-row">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="avatar ${escapeHtml(f.avatar_style)}" style="width:32px;height:32px"><div class="avatar-shape"></div></div>
+            <p class="setting-label" style="margin:0">${escapeHtml(f.display_name)}</p>
+          </div>
+          <div class="toggle ${revealedIds.has(f.id) ? '' : 'off'}" data-action="toggle-reveal" data-id="${f.id}"></div>
+        </div>
+      `).join('') : `<p class="empty-hint">Ajoute des amis pour pouvoir leur révéler ton visage.</p>`}
     </div>
 
     <div class="setting-row">
@@ -215,6 +229,36 @@ export async function renderProfil(container, myProfile, { signOut }){
       alert(`Erreur : ${err.message}`);
       editFaceBtn.disabled = false;
     }
+  });
+
+  document.getElementById('manage-reveals-btn').addEventListener('click', () => {
+    const panel = document.getElementById('reveal-manage-panel');
+    panel.hidden = !panel.hidden;
+  });
+
+  container.querySelectorAll('[data-action="toggle-reveal"]').forEach(toggle => {
+    toggle.addEventListener('click', async () => {
+      const friendId = toggle.dataset.id;
+      const wasRevealed = !toggle.classList.contains('off');
+      const next = !wasRevealed;
+      toggle.classList.toggle('off', !next);
+      myProfile.faceRevealCount += next ? 1 : -1;
+      document.getElementById('face-reveal-count').textContent =
+        `Pour ${myProfile.faceRevealCount} personne${myProfile.faceRevealCount === 1 ? '' : 's'}`;
+      try {
+        if (next) {
+          await revealFaceTo(myProfile.id, friendId);
+        } else {
+          await unrevealFaceFrom(myProfile.id, friendId);
+        }
+      } catch (err) {
+        toggle.classList.toggle('off', next);
+        myProfile.faceRevealCount += next ? -1 : 1;
+        document.getElementById('face-reveal-count').textContent =
+          `Pour ${myProfile.faceRevealCount} personne${myProfile.faceRevealCount === 1 ? '' : 's'}`;
+        alert(`Erreur : ${err.message}`);
+      }
+    });
   });
 
   const dmToggle = document.getElementById('dm-toggle');
