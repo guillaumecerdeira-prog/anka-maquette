@@ -339,6 +339,33 @@
   .profile-name{ font-family: var(--font-display); font-weight:600; font-size:19px; margin:0; }
   .profile-caption{ font-size:12px; color: var(--ink-soft); margin:4px 0 0; text-align:center; max-width:250px; }
 
+  .profile-photos{ display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
+  .profile-photo-slot{ display:flex; flex-direction:column; align-items:center; }
+  .profile-photo-label{
+    font-family: var(--font-mono);
+    font-size:10px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color: var(--ink-soft);
+    margin:-6px 0 0;
+  }
+  .profile-face-circle{ overflow:hidden; background: var(--surface-alt); }
+  .profile-face-circle img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .profile-face-locked svg{ width:26px; height:26px; stroke: var(--ink-soft); fill:none; stroke-width:1.6; }
+  .profile-photo-edit-btn{
+    position:absolute;
+    bottom:2px; right:2px;
+    z-index:3;
+    width:26px; height:26px;
+    border-radius:50%;
+    background: var(--anchor);
+    color: var(--surface);
+    border:2px solid var(--surface);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .profile-photo-edit-btn svg{ width:13px; height:13px; stroke: var(--surface); fill:none; stroke-width:2; }
+
   .setting-row{
     display:flex;
     align-items:center;

@@ -1,7 +1,11 @@
-import { setDmOpen, updatePromptAnswer, deletePrompt, updateProfileInterests, fetchInterestsCatalog } from './profile.js';
+import { setDmOpen, updatePromptAnswer, deletePrompt, updateProfileInterests, fetchInterestsCatalog, updateAvatarStyle } from './profile.js';
 import { fetchWall, createPost, deletePost } from './posts.js';
 import { fetchIncomingFriendRequests, respondToFriendRequest, fetchMyFriends } from './friends.js';
 import { renderProfileDetail } from './profile-view.js';
+import { fetchFacePhotoUrl, uploadFacePhoto } from './face-photo.js';
+
+const AVATAR_STYLES = ['av-a', 'av-b', 'av-c', 'av-d'];
+const MAX_FACE_PHOTO_BYTES = 5 * 1024 * 1024;
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -24,11 +28,12 @@ function renderPostRow(post){
 export async function renderProfil(container, myProfile, { signOut }){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [wall, incomingFriends, friends, interestsCatalog] = await Promise.all([
+  const [wall, incomingFriends, friends, interestsCatalog, facePhotoUrl] = await Promise.all([
     fetchWall(myProfile.id),
     fetchIncomingFriendRequests(myProfile.id),
     fetchMyFriends(myProfile.id),
-    fetchInterestsCatalog()
+    fetchInterestsCatalog(),
+    fetchFacePhotoUrl(myProfile.id)
   ]);
 
   const rerender = () => renderProfil(container, myProfile, { signOut });
@@ -83,14 +88,36 @@ export async function renderProfil(container, myProfile, { signOut }){
 
   const wallHtml = wall.length ? wall.map(renderPostRow).join('') : `<p class="empty-hint">Rien sur ton mur pour l'instant.</p>`;
 
+  const editIconSvg = `<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+  const avatarPickerHtml = AVATAR_STYLES.map(style => `
+    <button type="button" class="avatar-option ${style}${style === myProfile.avatar_style ? ' active' : ''}" data-style="${style}"><div class="avatar-shape"></div></button>
+  `).join('');
+
   container.innerHTML = `
     <div class="profile-hero">
-      <div class="profile-avatar-wrap">
-        <div class="veil-ring r1"></div>
-        <div class="veil-ring r2"></div>
-        <div class="profile-avatar ${escapeHtml(myProfile.avatar_style)}"><div class="avatar-shape"></div></div>
+      <div class="profile-photos">
+        <div class="profile-photo-slot">
+          <div class="profile-avatar-wrap">
+            <div class="veil-ring r1"></div>
+            <div class="veil-ring r2"></div>
+            <div class="profile-avatar ${escapeHtml(myProfile.avatar_style)}" id="avatar-circle"><div class="avatar-shape"></div></div>
+            <button type="button" class="profile-photo-edit-btn" id="edit-avatar-btn" title="Modifier l'avatar">${editIconSvg}</button>
+          </div>
+          <p class="profile-photo-label">Avatar</p>
+        </div>
+        <div class="profile-photo-slot">
+          <div class="profile-avatar-wrap">
+            <div class="veil-ring r1"></div>
+            <div class="veil-ring r2"></div>
+            <div class="profile-avatar profile-face-circle" id="face-circle">${facePhotoUrl ? `<img src="${facePhotoUrl}" alt="Ta photo de visage">` : `<div class="avatar-shape"></div>`}</div>
+            <button type="button" class="profile-photo-edit-btn" id="edit-face-btn" title="Modifier ta photo de visage">${editIconSvg}</button>
+          </div>
+          <p class="profile-photo-label">Visage</p>
+        </div>
       </div>
-      <p class="profile-name">${escapeHtml(myProfile.display_name)}</p>
+      <input type="file" id="face-photo-input" accept="image/*" hidden>
+      <div class="avatar-picker" id="avatar-edit-picker" hidden style="margin-top:14px">${avatarPickerHtml}</div>
+      <p class="profile-name" style="margin-top:14px">${escapeHtml(myProfile.display_name)}</p>
       <p class="profile-caption">Ton avatar est visible par tous. Ton visage reste à toi de le révéler.</p>
     </div>
 
@@ -152,6 +179,43 @@ export async function renderProfil(container, myProfile, { signOut }){
   `;
 
   document.getElementById('logout-btn')?.addEventListener('click', () => signOut?.());
+
+  const avatarPicker = document.getElementById('avatar-edit-picker');
+  document.getElementById('edit-avatar-btn').addEventListener('click', () => {
+    avatarPicker.hidden = !avatarPicker.hidden;
+  });
+  avatarPicker.addEventListener('click', async (event) => {
+    const btn = event.target.closest('.avatar-option');
+    if (!btn) return;
+    const style = btn.dataset.style;
+    avatarPicker.hidden = true;
+    if (style === myProfile.avatar_style) return;
+    try {
+      await updateAvatarStyle(myProfile.id, style);
+      myProfile.avatar_style = style;
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+    }
+  });
+
+  const facePhotoInput = document.getElementById('face-photo-input');
+  const editFaceBtn = document.getElementById('edit-face-btn');
+  editFaceBtn.addEventListener('click', () => facePhotoInput.click());
+  facePhotoInput.addEventListener('change', async () => {
+    const file = facePhotoInput.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('Merci de choisir une image.'); facePhotoInput.value = ''; return; }
+    if (file.size > MAX_FACE_PHOTO_BYTES) { alert('Image trop lourde (5 Mo maximum).'); facePhotoInput.value = ''; return; }
+    editFaceBtn.disabled = true;
+    try {
+      await uploadFacePhoto(myProfile.id, file);
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+      editFaceBtn.disabled = false;
+    }
+  });
 
   const dmToggle = document.getElementById('dm-toggle');
   dmToggle?.addEventListener('click', async () => {
