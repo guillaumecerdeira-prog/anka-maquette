@@ -74,10 +74,10 @@ export async function renderAccueil(container, myProfile){
     <p class="section-label">On t'a dit bonjour</p>
     ${incoming.map(r => `
       <div class="admin-row" data-incoming-id="${r.id}">
-        <div class="admin-row-main">
-          <div class="avatar ${escapeHtml(r.profiles.avatar_style)}" style="width:40px;height:40px"><div class="avatar-shape"></div></div>
+        <div class="admin-row-main" data-action="view-profile" data-id="${r.from_profile_id}" style="cursor:pointer;display:flex;align-items:center;gap:10px">
+          <div class="avatar ${escapeHtml(r.profiles.avatar_style)}" style="width:40px;height:40px;flex-shrink:0"><div class="avatar-shape"></div></div>
+          <p class="admin-row-title" style="margin:0">${escapeHtml(r.profiles.display_name)}</p>
         </div>
-        <p class="admin-row-title" style="flex:1;margin:0 10px">${escapeHtml(r.profiles.display_name)}</p>
         <div class="admin-row-actions">
           <button class="btn-sm" data-action="decline-request" data-id="${r.id}">Refuser</button>
           <button class="btn-sm positive" data-action="accept-request" data-id="${r.id}">Accepter</button>
