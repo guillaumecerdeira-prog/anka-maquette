@@ -36,6 +36,10 @@ let currentSession = null;
 let currentProfile = null;
 let viewMode = 'user'; // 'user' | 'supervisor'
 
+// Persisted so a page reload keeps a supervisor on the supervisor screen
+// instead of silently dropping them back to the user app.
+const VIEW_MODE_KEY = 'anka_view_mode';
+
 function setMode(next){
   mode = next;
   errorEl.hidden = true;
@@ -114,6 +118,7 @@ function hideAllGates(){
 }
 
 function applyViewMode(profile){
+  sessionStorage.setItem(VIEW_MODE_KEY, viewMode);
   const isSupervisorMode = viewMode === 'supervisor';
   appStage.classList.toggle('hidden', isSupervisorMode);
   supervisorStage.classList.toggle('hidden', !isSupervisorMode);
@@ -186,7 +191,7 @@ async function enterApp(session){
 
   hideAllGates();
   modeSwitchBtn.classList.toggle('hidden', !profile.is_supervisor);
-  viewMode = 'user';
+  viewMode = (profile.is_supervisor && sessionStorage.getItem(VIEW_MODE_KEY) === 'supervisor') ? 'supervisor' : 'user';
   applyViewMode(profile);
   initApp({ signOut, profile });
 }
@@ -202,6 +207,7 @@ function handleSession(session){
     enterApp(session);
   } else {
     viewMode = 'user';
+    sessionStorage.removeItem(VIEW_MODE_KEY);
     updateReturnButton(null);
     hideAllGates();
     authGate.classList.remove('hidden');

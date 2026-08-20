@@ -21,15 +21,11 @@
   }
 
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;height:100%;}
+  html,body{margin:0;padding:0;}
   body{
     font-family: var(--font-body);
     color: var(--ink);
     background: var(--bg);
-    min-height:100vh;
-    min-height:100dvh;
-    display:flex;
-    flex-direction:column;
   }
 
   .utility-bar{
@@ -45,13 +41,21 @@
 
   .hidden{ display:none !important; }
 
-  /* ---- centered gates (auth / onboarding / banned / supervisor) ---- */
+  /* ---- centered gates (auth / onboarding / banned / supervisor) ----
+     position:fixed + inset:0 pins this to the real viewport, and
+     overflow-y:auto + margin:auto on the child (below) centers short
+     content but degrades to a normal top-anchored, fully scrollable
+     region when the content is taller than the screen. Centering via
+     align-items:center here instead would clip/overflow evenly on
+     both edges and leave the top of tall content unreachable by
+     scrolling — that's what made the supervisor panel's header
+     unreachable. */
   .auth-wrap, .supervisor-stage{
-    flex:1;
-    min-height:0;
-    width:100%;
+    position:fixed;
+    inset:0;
+    z-index:1;
+    overflow-y:auto;
     display:flex;
-    align-items:center;
     justify-content:center;
     background:
       radial-gradient(circle at 18% 12%, rgba(184,131,74,0.10), transparent 40%),
@@ -419,6 +423,7 @@
   .auth-card{
     width:390px;
     max-width:100%;
+    margin:auto 0;
     background: var(--surface);
     border:1px solid var(--line);
     border-radius: var(--radius-lg);
@@ -596,6 +601,7 @@
   .supervisor-panel{
     width:100%;
     max-width:980px;
+    margin:auto 0;
     background: var(--surface);
     border:1px solid var(--line);
     border-radius: var(--radius-lg);
