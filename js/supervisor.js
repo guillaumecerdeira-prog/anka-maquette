@@ -93,10 +93,11 @@ const KEYWORD_CATEGORY_LABELS = {
 
 async function renderContent(){
   contentEl.innerHTML = `<p class="empty-hint">Chargement…</p>`;
-  const [{ data: interests, error: interestsError }, { data: challenges, error: challengesError }, { data: keywords, error: keywordsError }] = await Promise.all([
+  const [{ data: interests, error: interestsError }, { data: challenges, error: challengesError }, { data: keywords, error: keywordsError }, { data: hiddenMatchSettings, error: hiddenMatchSettingsError }] = await Promise.all([
     supabase.from('interests').select('*').order('name'),
     supabase.from('challenges').select('*, interests(name)').order('week_start', { ascending: false }),
-    supabase.from('moderation_keywords').select('*').order('category').order('keyword')
+    supabase.from('moderation_keywords').select('*').order('category').order('keyword'),
+    supabase.from('hidden_match_settings').select('*').eq('id', 1).single()
   ]);
 
   if (interestsError) { contentEl.innerHTML = `<p class="empty-hint">Erreur : ${escapeHtml(interestsError.message)}</p>`; return; }
@@ -162,7 +163,37 @@ async function renderContent(){
       <button type="submit" class="btn-sm primary">Ajouter</button>
     </form>
     <div class="admin-list">${keywordRows}</div>
+
+    <p class="admin-section-title">Matchs cachés (activité forum)</p>
+    <p class="empty-hint" style="margin-bottom:14px">Des profils compatibles sont suggérés à partir de l'activité forum (fils suivis, participation, catégories communes), recalculés chaque nuit et mélangés sans distinction dans les suggestions.</p>
+    ${hiddenMatchSettingsError ? `<p class="empty-hint">Erreur : ${escapeHtml(hiddenMatchSettingsError.message)}</p>` : `
+      <form class="admin-form-row" id="hidden-match-settings-form">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Seuil de déclenchement (points)
+          <input type="number" name="score_threshold" min="0" step="0.5" value="${hiddenMatchSettings.score_threshold}" required>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Plafond quotidien par utilisateur
+          <input type="number" name="daily_release_cap" min="1" step="1" value="${hiddenMatchSettings.daily_release_cap}" required>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Fenêtre d'activité (jours)
+          <input type="number" name="lookback_days" min="1" step="1" value="${hiddenMatchSettings.lookback_days}" required>
+        </label>
+        <button type="submit" class="btn-sm primary">Enregistrer</button>
+      </form>
+    `}
   `;
+
+  document.getElementById('hidden-match-settings-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const { error } = await supabase.from('hidden_match_settings').update({
+      score_threshold: parseFloat(fd.get('score_threshold')),
+      daily_release_cap: parseInt(fd.get('daily_release_cap'), 10),
+      lookback_days: parseInt(fd.get('lookback_days'), 10),
+      updated_at: new Date().toISOString()
+    }).eq('id', 1);
+    if (error) { alert(`Erreur : ${error.message}`); return; }
+    renderContent();
+  });
 
   document.getElementById('add-keyword-form').addEventListener('submit', async (event) => {
     event.preventDefault();
