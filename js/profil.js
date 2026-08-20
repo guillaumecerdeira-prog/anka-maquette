@@ -1,4 +1,4 @@
-import { setDmOpen, updatePromptAnswer, updateProfileInterests, fetchInterestsCatalog } from './profile.js';
+import { setDmOpen, updatePromptAnswer, deletePrompt, updateProfileInterests, fetchInterestsCatalog } from './profile.js';
 import { fetchWall, createPost, deletePost } from './posts.js';
 import { fetchIncomingFriendRequests, respondToFriendRequest, fetchMyFriends } from './friends.js';
 import { renderProfileDetail } from './profile-view.js';
@@ -53,7 +53,10 @@ export async function renderProfil(container, myProfile, { signOut }){
               <button type="button" class="btn-sm" data-action="cancel-prompt">Annuler</button>
             </div>
           </div>
-          <button type="button" class="btn-sm" data-action="edit-prompt" style="margin-top:8px">Modifier</button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button type="button" class="btn-sm" data-action="edit-prompt">Modifier</button>
+            <button type="button" class="btn-sm danger" data-action="delete-prompt">Supprimer</button>
+          </div>
         </div>
       `).join('')
     : `<p class="empty-hint">Pas encore de réponse ajoutée.</p>`;
@@ -225,6 +228,23 @@ export async function renderProfil(container, myProfile, { signOut }){
       } catch (err) {
         alert(`Erreur : ${err.message}`);
       } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-action="delete-prompt"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Supprimer ce prompt ?')) return;
+      const card = btn.closest('.prompt-card');
+      const promptId = card.dataset.promptId;
+      btn.disabled = true;
+      try {
+        await deletePrompt(promptId);
+        myProfile.prompts = myProfile.prompts.filter(p => p.id !== promptId);
+        rerender();
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
         btn.disabled = false;
       }
     });

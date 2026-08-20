@@ -93,6 +93,11 @@ export async function updatePromptAnswer(promptId, answer){
   if (error) throw error;
 }
 
+export async function deletePrompt(promptId){
+  const { error } = await supabase.from('profile_prompts').delete().eq('id', promptId);
+  if (error) throw error;
+}
+
 export async function updateProfileInterests(profileId, interestIds){
   const { error: deleteError } = await supabase.from('profile_interests').delete().eq('profile_id', profileId);
   if (deleteError) throw deleteError;
