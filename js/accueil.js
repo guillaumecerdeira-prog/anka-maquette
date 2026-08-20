@@ -27,12 +27,13 @@ const QUOTA_ERROR = 'daily_connection_quota_exceeded';
 export async function renderAccueil(container, myProfile){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [quotaResult, incomingResult, sentResult, passedResult, myInterestsResult] = await Promise.all([
+  const [quotaResult, incomingResult, sentResult, passedResult, myInterestsResult, hiddenMatchResult] = await Promise.all([
     supabase.rpc('get_daily_connection_quota').single(),
     supabase.from('connection_requests').select('id, from_profile_id, created_at, profiles!connection_requests_from_profile_id_fkey(display_name, avatar_style)').eq('to_profile_id', myProfile.id).eq('status', 'pending'),
     supabase.from('connection_requests').select('from_profile_id, to_profile_id').or(`from_profile_id.eq.${myProfile.id},to_profile_id.eq.${myProfile.id}`),
     supabase.from('profile_passes').select('passed_profile_id').eq('profile_id', myProfile.id),
-    supabase.from('profile_interests').select('interest_id').eq('profile_id', myProfile.id)
+    supabase.from('profile_interests').select('interest_id').eq('profile_id', myProfile.id),
+    supabase.rpc('get_my_hidden_match_candidates')
   ]);
 
   const excludedIds = new Set([myProfile.id]);
@@ -58,6 +59,25 @@ export async function renderAccueil(container, myProfile){
   const suggestions = (candidates || [])
     .filter(p => !p.suspended_until || new Date(p.suspended_until) <= now)
     .slice(0, 10);
+
+  // Match caché : des profils suggérés à partir de l'activité forum, mélangés
+  // sans distinction visible parmi les suggestions classiques (cf. specmatchcacheforum.md).
+  const hiddenMatchIds = (hiddenMatchResult.data || []).map(row => typeof row === 'string' ? row : Object.values(row)[0]);
+  const hiddenMatchIdSet = new Set(hiddenMatchIds);
+  if (hiddenMatchIds.length) {
+    const { data: hiddenData } = await supabase
+      .from('profiles')
+      .select(`
+        id, display_name, birth_date, avatar_style, created_at, last_seen_at, is_banned, suspended_until,
+        profile_interests ( interests ( id, name ) )
+      `)
+      .in('id', hiddenMatchIds)
+      .eq('is_banned', false);
+    const suggestionIds = new Set(suggestions.map(p => p.id));
+    (hiddenData || [])
+      .filter(p => (!p.suspended_until || new Date(p.suspended_until) <= now) && !suggestionIds.has(p.id))
+      .forEach(p => suggestions.splice(Math.floor(Math.random() * (suggestions.length + 1)), 0, p));
+  }
 
   const quota = quotaResult.data;
   const incoming = incomingResult.data || [];
@@ -90,6 +110,7 @@ export async function renderAccueil(container, myProfile){
   const cardsHtml = suggestions.length ? suggestions.map(p => {
     const interests = p.profile_interests.map(pi => pi.interests);
     const sharedCount = interests.filter(i => myInterestIds.has(i.id)).length;
+    const showWhisper = sharedCount >= 2 || hiddenMatchIdSet.has(p.id);
     const status = statusLabel(p);
     return `
       <div class="card" data-suggestion-id="${p.id}">
@@ -101,7 +122,7 @@ export async function renderAccueil(container, myProfile){
           </div>
         </div>
         <div class="chips">${interests.map(i => `<span class="chip">${escapeHtml(i.name)}</span>`).join('') || '<span class="empty-hint">Aucun centre d\'intérêt renseigné.</span>'}</div>
-        ${sharedCount >= 2 ? `<p class="whisper">On pense que vous pourriez bien vous entendre.</p>` : ''}
+        ${showWhisper ? `<p class="whisper">On pense que vous pourriez bien vous entendre.</p>` : ''}
         <div class="card-actions">
           <button class="btn btn-primary" data-action="say-hello" data-id="${p.id}">Dire bonjour</button>
           <button class="btn btn-ghost" data-action="pass" data-id="${p.id}">Passer</button>
