@@ -1,5 +1,6 @@
 import { supabase } from './supabase-client.js';
 import { renderProfileDetail } from './profile-view.js';
+import { respondToConnectionRequest } from './connections.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -150,8 +151,12 @@ export async function renderAccueil(container, myProfile){
 }
 
 async function respondToRequest(requestId, status, container, myProfile){
-  const { error } = await supabase.from('connection_requests').update({ status }).eq('id', requestId);
-  if (error) { alert(`Erreur : ${error.message}`); return; }
+  try {
+    await respondToConnectionRequest(requestId, status);
+  } catch (err) {
+    alert(`Erreur : ${err.message}`);
+    return;
+  }
   if (status === 'accepted') alert("C'est un match !");
   renderAccueil(container, myProfile);
 }

@@ -1,6 +1,7 @@
 import { fetchProfileById } from './profile.js';
 import { fetchWall } from './posts.js';
 import { fetchFriendshipStatus, sendFriendRequest, respondToFriendRequest, removeFriendship } from './friends.js';
+import { fetchIncomingConnectionRequest, respondToConnectionRequest } from './connections.js';
 import { reportButtonHtml, attachReportHandlers } from './reports.js';
 
 function escapeHtml(str){
@@ -33,10 +34,11 @@ function friendActionHtml(friendship, myId){
 export async function renderProfileDetail(container, myProfile, theirId, onBack){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [theirProfile, friendship, wall] = await Promise.all([
+  const [theirProfile, friendship, wall, incomingConnection] = await Promise.all([
     fetchProfileById(theirId),
     fetchFriendshipStatus(myProfile.id, theirId),
-    fetchWall(theirId)
+    fetchWall(theirId),
+    fetchIncomingConnectionRequest(myProfile.id, theirId)
   ]);
 
   if (!theirProfile) { container.innerHTML = `<p class="empty-hint">Profil introuvable.</p>`; return; }
@@ -73,6 +75,12 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
       <p class="profile-name">${escapeHtml(theirProfile.display_name)}, ${computeAge(theirProfile.birth_date)} ans</p>
     </div>
     <div class="card-actions">${friendActionHtml(friendship, myProfile.id)}</div>
+    ${incomingConnection ? `
+      <div class="card-actions" style="margin-top:10px">
+        <button class="btn btn-ghost" id="connection-decline" data-id="${incomingConnection.id}">Refuser le bonjour</button>
+        <button class="btn btn-primary" id="connection-accept" data-id="${incomingConnection.id}">Accepter le bonjour</button>
+      </div>
+    ` : ''}
     <div class="chips" style="margin:16px 0">${chips}</div>
     <p class="section-label">Quelques mots</p>
     ${prompts}
@@ -107,5 +115,24 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
     if (!confirm('Retirer cet ami ?')) return;
     await removeFriendship(event.target.dataset.id);
     rerender();
+  });
+  document.getElementById('connection-accept')?.addEventListener('click', async (event) => {
+    event.target.disabled = true;
+    try {
+      await respondToConnectionRequest(event.target.dataset.id, 'accepted');
+      alert("C'est un match !");
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+      event.target.disabled = false;
+    }
+  });
+  document.getElementById('connection-decline')?.addEventListener('click', async (event) => {
+    try {
+      await respondToConnectionRequest(event.target.dataset.id, 'declined');
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+    }
   });
 }
