@@ -239,38 +239,78 @@ async function loadModerationQueue(){
 
   const profileIds = new Set();
   const responseIds = new Set();
+  const postIds = new Set();
+  const forumThreadIds = new Set();
+  const forumPostIds = new Set();
   (reports || []).forEach(r => {
     profileIds.add(r.reporter_profile_id);
     if (r.target_type === 'profile') profileIds.add(r.target_id);
     if (r.target_type === 'challenge_response') responseIds.add(r.target_id);
+    if (r.target_type === 'post') postIds.add(r.target_id);
+    if (r.target_type === 'forum_thread') forumThreadIds.add(r.target_id);
+    if (r.target_type === 'forum_post') forumPostIds.add(r.target_id);
   });
   (flags || []).forEach(f => { if (f.target_type === 'challenge_response') responseIds.add(f.target_id); });
 
-  const [{ data: profiles }, { data: responses }] = await Promise.all([
-    profileIds.size ? supabase.from('profiles').select('id, display_name').in('id', Array.from(profileIds)) : { data: [] },
-    responseIds.size ? supabase.from('challenge_responses').select('id, profile_id, text').in('id', Array.from(responseIds)) : { data: [] }
+  const [{ data: responses }, { data: posts }, { data: forumThreads }, { data: forumPosts }] = await Promise.all([
+    responseIds.size ? supabase.from('challenge_responses').select('id, profile_id, text').in('id', Array.from(responseIds)) : { data: [] },
+    postIds.size ? supabase.from('posts').select('id, profile_id, body').in('id', Array.from(postIds)) : { data: [] },
+    forumThreadIds.size ? supabase.from('forum_threads').select('id, profile_id, title').in('id', Array.from(forumThreadIds)) : { data: [] },
+    forumPostIds.size ? supabase.from('forum_posts').select('id, profile_id, body').in('id', Array.from(forumPostIds)) : { data: [] }
   ]);
+
+  [...(responses || []), ...(posts || []), ...(forumThreads || []), ...(forumPosts || [])]
+    .forEach(item => profileIds.add(item.profile_id));
+
+  const { data: profiles } = profileIds.size
+    ? await supabase.from('profiles').select('id, display_name').in('id', Array.from(profileIds))
+    : { data: [] };
 
   return {
     reports: reports || [],
     flags: flags || [],
     reportsError, flagsError,
     profileMap: new Map((profiles || []).map(p => [p.id, p])),
-    responseMap: new Map((responses || []).map(r => [r.id, r]))
+    responseMap: new Map((responses || []).map(r => [r.id, r])),
+    postMap: new Map((posts || []).map(p => [p.id, p])),
+    forumThreadMap: new Map((forumThreads || []).map(t => [t.id, t])),
+    forumPostMap: new Map((forumPosts || []).map(p => [p.id, p]))
   };
 }
 
 async function renderModeration(){
   contentEl.innerHTML = `<p class="empty-hint">Chargement…</p>`;
-  const { reports, flags, reportsError, flagsError, profileMap, responseMap } = await loadModerationQueue();
+  const { reports, flags, reportsError, flagsError, profileMap, responseMap, postMap, forumThreadMap, forumPostMap } = await loadModerationQueue();
+
+  function authorName(profileId){
+    return escapeHtml(profileMap.get(profileId)?.display_name || profileId);
+  }
 
   function targetLabel(targetType, targetId){
     if (targetType === 'profile') {
-      return `Profil : ${escapeHtml(profileMap.get(targetId)?.display_name || targetId)}`;
+      return `Profil : ${authorName(targetId)}`;
+    }
+    if (targetType === 'post') {
+      const post = postMap.get(targetId);
+      return post
+        ? `Post du mur de ${authorName(post.profile_id)} : "${escapeHtml((post.body || '').slice(0, 140))}"`
+        : `Post du mur (${targetId.slice(0, 8)}…)`;
+    }
+    if (targetType === 'forum_thread') {
+      const thread = forumThreadMap.get(targetId);
+      return thread
+        ? `Fil de forum de ${authorName(thread.profile_id)} : "${escapeHtml(thread.title)}"`
+        : `Fil de forum (${targetId.slice(0, 8)}…)`;
+    }
+    if (targetType === 'forum_post') {
+      const post = forumPostMap.get(targetId);
+      return post
+        ? `Réponse de forum de ${authorName(post.profile_id)} : "${escapeHtml((post.body || '').slice(0, 140))}"`
+        : `Réponse de forum (${targetId.slice(0, 8)}…)`;
     }
     const response = responseMap.get(targetId);
     return response
-      ? `Réponse de défi de ${escapeHtml(profileMap.get(response.profile_id)?.display_name || response.profile_id)} : "${escapeHtml((response.text || '').slice(0, 140))}"`
+      ? `Réponse de défi de ${authorName(response.profile_id)} : "${escapeHtml((response.text || '').slice(0, 140))}"`
       : `Réponse de défi (${targetId.slice(0, 8)}…)`;
   }
 
