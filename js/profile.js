@@ -93,6 +93,23 @@ export async function updatePromptAnswer(promptId, answer){
   if (error) throw error;
 }
 
+export async function deletePrompt(promptId){
+  const { error } = await supabase.from('profile_prompts').delete().eq('id', promptId);
+  if (error) throw error;
+}
+
+export async function updateProfileInterests(profileId, interestIds){
+  const { error: deleteError } = await supabase.from('profile_interests').delete().eq('profile_id', profileId);
+  if (deleteError) throw deleteError;
+
+  if (interestIds.length) {
+    const { error: insertError } = await supabase
+      .from('profile_interests')
+      .insert(interestIds.map(interest_id => ({ profile_id: profileId, interest_id })));
+    if (insertError) throw insertError;
+  }
+}
+
 export async function setDmOpen(userId, dmOpen){
   const { error } = await supabase.from('profiles').update({ dm_open: dmOpen }).eq('id', userId);
   if (error) throw error;

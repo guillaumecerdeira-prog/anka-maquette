@@ -1,4 +1,4 @@
-import { setDmOpen, updatePromptAnswer } from './profile.js';
+import { setDmOpen, updatePromptAnswer, deletePrompt, updateProfileInterests, fetchInterestsCatalog } from './profile.js';
 import { fetchWall, createPost, deletePost } from './posts.js';
 import { fetchIncomingFriendRequests, respondToFriendRequest, fetchMyFriends } from './friends.js';
 import { renderProfileDetail } from './profile-view.js';
@@ -24,16 +24,22 @@ function renderPostRow(post){
 export async function renderProfil(container, myProfile, { signOut }){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [wall, incomingFriends, friends] = await Promise.all([
+  const [wall, incomingFriends, friends, interestsCatalog] = await Promise.all([
     fetchWall(myProfile.id),
     fetchIncomingFriendRequests(myProfile.id),
-    fetchMyFriends(myProfile.id)
+    fetchMyFriends(myProfile.id),
+    fetchInterestsCatalog()
   ]);
 
   const rerender = () => renderProfil(container, myProfile, { signOut });
 
   const chips = myProfile.interests.map(i => `<span class="chip">${escapeHtml(i.name)}</span>`).join('')
     || `<span class="empty-hint">Aucun centre d'intérêt renseigné.</span>`;
+
+  const myInterestIds = new Set(myProfile.interests.map(i => i.id));
+  const interestsPickerHtml = interestsCatalog.map(i => `
+    <button type="button" class="interest-option${myInterestIds.has(i.id) ? ' selected' : ''}" data-id="${i.id}">${escapeHtml(i.name)}</button>
+  `).join('');
 
   const prompts = myProfile.prompts.length
     ? myProfile.prompts.map(p => `
@@ -47,7 +53,10 @@ export async function renderProfil(container, myProfile, { signOut }){
               <button type="button" class="btn-sm" data-action="cancel-prompt">Annuler</button>
             </div>
           </div>
-          <button type="button" class="btn-sm" data-action="edit-prompt" style="margin-top:8px">Modifier</button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button type="button" class="btn-sm" data-action="edit-prompt">Modifier</button>
+            <button type="button" class="btn-sm danger" data-action="delete-prompt">Supprimer</button>
+          </div>
         </div>
       `).join('')
     : `<p class="empty-hint">Pas encore de réponse ajoutée.</p>`;
@@ -107,7 +116,14 @@ export async function renderProfil(container, myProfile, { signOut }){
     <p class="section-label">Quelques mots</p>
     ${prompts}
 
-    <div class="chips" style="margin-top:14px">${chips}</div>
+    <p class="section-label" style="margin-top:14px">Centres d'intérêt</p>
+    <div class="chips" id="interests-chips">${chips}</div>
+    <div class="interest-picker" id="interests-picker" hidden style="margin-top:6px">${interestsPickerHtml}</div>
+    <div style="margin-top:8px">
+      <button type="button" class="btn-sm" id="edit-interests-btn">Modifier</button>
+      <button type="button" class="btn-sm" id="save-interests-btn" hidden>Enregistrer</button>
+      <button type="button" class="btn-sm" id="cancel-interests-btn" hidden>Annuler</button>
+    </div>
 
     <div class="trust-note">
       <p>Débloquer ton visage est un signe de confiance. Tu peux le retirer à tout moment.</p>
@@ -215,6 +231,68 @@ export async function renderProfil(container, myProfile, { signOut }){
         btn.disabled = false;
       }
     });
+  });
+
+  container.querySelectorAll('[data-action="delete-prompt"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Supprimer ce prompt ?')) return;
+      const card = btn.closest('.prompt-card');
+      const promptId = card.dataset.promptId;
+      btn.disabled = true;
+      try {
+        await deletePrompt(promptId);
+        myProfile.prompts = myProfile.prompts.filter(p => p.id !== promptId);
+        rerender();
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  const interestsChips = document.getElementById('interests-chips');
+  const interestsPicker = document.getElementById('interests-picker');
+  const editInterestsBtn = document.getElementById('edit-interests-btn');
+  const saveInterestsBtn = document.getElementById('save-interests-btn');
+  const cancelInterestsBtn = document.getElementById('cancel-interests-btn');
+
+  editInterestsBtn.addEventListener('click', () => {
+    interestsChips.hidden = true;
+    interestsPicker.hidden = false;
+    editInterestsBtn.hidden = true;
+    saveInterestsBtn.hidden = false;
+    cancelInterestsBtn.hidden = false;
+  });
+
+  cancelInterestsBtn.addEventListener('click', () => {
+    interestsPicker.querySelectorAll('.interest-option').forEach(btn => {
+      btn.classList.toggle('selected', myInterestIds.has(btn.dataset.id));
+    });
+    interestsChips.hidden = false;
+    interestsPicker.hidden = true;
+    editInterestsBtn.hidden = false;
+    saveInterestsBtn.hidden = true;
+    cancelInterestsBtn.hidden = true;
+  });
+
+  interestsPicker.addEventListener('click', (event) => {
+    const btn = event.target.closest('.interest-option');
+    if (!btn) return;
+    btn.classList.toggle('selected');
+  });
+
+  saveInterestsBtn.addEventListener('click', async () => {
+    const selectedIds = Array.from(interestsPicker.querySelectorAll('.interest-option.selected')).map(btn => btn.dataset.id);
+    saveInterestsBtn.disabled = true;
+    try {
+      await updateProfileInterests(myProfile.id, selectedIds);
+      myProfile.interests = interestsCatalog.filter(i => selectedIds.includes(i.id));
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+    } finally {
+      saveInterestsBtn.disabled = false;
+    }
   });
 
   container.querySelectorAll('[data-action="accept-friend"]').forEach(btn => {
