@@ -12,6 +12,11 @@ function fmtDate(iso){
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
+function excerpt(text, max = 90){
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max).trimEnd()}…` : clean;
+}
+
 function fmtRelative(iso){
   const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (diffMin < 1) return "à l'instant";
@@ -252,27 +257,41 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
 
   const [{ data: thread, error: threadError }, { data: posts, error: postsError }] = await Promise.all([
     supabase.from('forum_threads').select('id, title, created_at, profile_id, interests(name), profiles(display_name)').eq('id', threadId).maybeSingle(),
-    supabase.from('forum_posts').select('id, body, created_at, profile_id, parent_post_id, profiles(display_name, avatar_style)').eq('thread_id', threadId).order('created_at', { ascending: true })
+    supabase.from('forum_posts').select('id, body, created_at, profile_id, parent_post_id, reply_to_post_id, profiles(display_name, avatar_style)').eq('thread_id', threadId).order('created_at', { ascending: true })
   ]);
 
   if (threadError || !thread) { container.innerHTML = `<p class="empty-hint">Fil introuvable.</p>`; return; }
 
+  const postsById = new Map((posts || []).map(p => [p.id, p]));
   const tree = buildPostTree(posts || []);
-  const postRows = tree.length ? tree.map(({ post: p, depth }) => `
-    <div class="response-row${depth ? ' is-reply' : ''}" data-post-id="${p.id}" data-parent-id="${p.parent_post_id || ''}">
+  const postRows = tree.length ? tree.map(({ post: p, depth }) => {
+    const quoted = p.reply_to_post_id ? postsById.get(p.reply_to_post_id) : null;
+    return `
+    <div class="response-row${depth ? ' is-reply' : ''}" id="post-${p.id}" data-post-id="${p.id}" data-parent-id="${p.parent_post_id || ''}">
       <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:${depth ? 30 : 36}px;height:${depth ? 30 : 36}px;flex-shrink:0"><div class="avatar-shape"></div></div>
       <div style="flex:1;min-width:0">
         <p class="response-name">${escapeHtml(p.profiles?.display_name || '—')} <span class="empty-hint">· ${fmtDate(p.created_at)}</span></p>
+        ${quoted ? `
+          <button type="button" class="reply-quote" data-jump-to="${quoted.id}">
+            <span class="reply-quote-author">↩ ${escapeHtml(quoted.profiles?.display_name || '—')}</span>
+            <span class="reply-quote-excerpt">${escapeHtml(excerpt(quoted.body))}</span>
+          </button>
+        ` : ''}
         <p class="response-text">${escapeHtml(p.body)}</p>
         <button class="btn-sm" data-action="toggle-nested-reply" data-id="${p.id}" style="margin-top:6px">Répondre</button>
         <form class="nested-reply-form" data-target-id="${p.id}" hidden style="margin-top:8px">
+          <div class="reply-quote-preview">
+            <span class="reply-quote-author">Réponse à ${escapeHtml(p.profiles?.display_name || '—')}</span>
+            <span class="reply-quote-excerpt">${escapeHtml(excerpt(p.body))}</span>
+          </div>
           <textarea name="body" placeholder="Ta réponse…" required maxlength="500" style="width:100%;min-height:56px;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);resize:vertical"></textarea>
           <button type="submit" class="btn-sm primary" style="margin-top:6px">Envoyer</button>
         </form>
       </div>
       ${p.profile_id !== myProfile.id ? reportButtonHtml('forum_post', p.id) : ''}
     </div>
-  `).join('') : (postsError ? `<p class="empty-hint">Erreur : ${escapeHtml(postsError.message)}</p>` : `<p class="empty-hint">Aucune réponse pour l'instant — sois le premier·ère.</p>`);
+  `;
+  }).join('') : (postsError ? `<p class="empty-hint">Erreur : ${escapeHtml(postsError.message)}</p>` : `<p class="empty-hint">Aucune réponse pour l'instant — sois le premier·ère.</p>`);
 
   container.innerHTML = `
     <button class="btn-sm" id="back-to-list" style="margin-bottom:14px">← Retour</button>
@@ -295,8 +314,8 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
 
   const rerender = () => renderThreadDetail(container, myProfile, threadId, onBack);
 
-  async function postReply(body, parentPostId){
-    return supabase.from('forum_posts').insert({ thread_id: threadId, profile_id: myProfile.id, body, parent_post_id: parentPostId });
+  async function postReply(body, parentPostId, replyToPostId){
+    return supabase.from('forum_posts').insert({ thread_id: threadId, profile_id: myProfile.id, body, parent_post_id: parentPostId, reply_to_post_id: replyToPostId });
   }
 
   document.getElementById('back-to-list').addEventListener('click', onBack);
@@ -305,7 +324,7 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
     const fd = new FormData(event.target);
     const body = fd.get('body').trim();
     if (!body) return;
-    const { error } = await postReply(body, null);
+    const { error } = await postReply(body, null, null);
     if (error) { alert(`Erreur : ${error.message}`); return; }
     rerender();
   });
@@ -323,12 +342,23 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
       const body = new FormData(event.target).get('body').trim();
       if (!body) return;
       const row = form.closest('.response-row');
-      // Flattening rule: replying to a depth-1 post reattaches to its own
-      // parent instead of nesting a 3rd level.
+      // Flattening rule: the visual parent is the depth-0 ancestor (reattach
+      // instead of nesting a 3rd level), but reply_to_post_id always points
+      // at the exact post that was replied to, so the quote stays accurate.
       const effectiveParentId = row.dataset.parentId || row.dataset.postId;
-      const { error } = await postReply(body, effectiveParentId);
+      const { error } = await postReply(body, effectiveParentId, row.dataset.postId);
       if (error) { alert(`Erreur : ${error.message}`); return; }
       rerender();
+    });
+  });
+
+  container.querySelectorAll('[data-jump-to]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(`post-${btn.dataset.jumpTo}`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('jump-highlight');
+      setTimeout(() => target.classList.remove('jump-highlight'), 1500);
     });
   });
 }
