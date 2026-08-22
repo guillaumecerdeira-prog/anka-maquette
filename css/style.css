@@ -306,11 +306,6 @@
     border-bottom:1px solid var(--line);
   }
   .response-row:last-child{ border-bottom:none; }
-  .response-row.is-reply{
-    margin-left:30px;
-    padding-left:12px;
-    border-left:2px solid var(--line);
-  }
   .response-avatar{ width:36px; height:36px; border-radius:50%; flex-shrink:0; }
   .response-name{ font-size:12.5px; font-weight:600; margin:0 0 2px; }
   .response-text{ font-size:12.5px; color: var(--ink-soft); margin:0; line-height:1.4; }
@@ -319,7 +314,7 @@
     display:block;
     background: var(--surface-alt);
     border:none;
-    border-left:2px solid var(--sage);
+    border-left:2px solid var(--brass);
     border-radius: 0 8px 8px 0;
     padding:5px 10px;
     margin:2px 0 6px;
@@ -332,7 +327,7 @@
     font-family: var(--font-body);
     font-size:10.5px;
     font-weight:600;
-    color: var(--sage);
+    color: var(--brass);
     margin-bottom:1px;
   }
   .reply-quote-excerpt{

@@ -286,11 +286,11 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
 
   const postsById = new Map((posts || []).map(p => [p.id, p]));
   const tree = buildPostTree(posts || []);
-  const postRows = tree.length ? tree.map(({ post: p, depth }) => {
+  const postRows = tree.length ? tree.map(({ post: p }) => {
     const quoted = p.reply_to_post_id ? postsById.get(p.reply_to_post_id) : null;
     return `
-    <div class="response-row${depth ? ' is-reply' : ''}" id="post-${p.id}" data-post-id="${p.id}" data-parent-id="${p.parent_post_id || ''}">
-      <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:${depth ? 30 : 36}px;height:${depth ? 30 : 36}px;flex-shrink:0"><div class="avatar-shape"></div></div>
+    <div class="response-row" id="post-${p.id}" data-post-id="${p.id}" data-parent-id="${p.parent_post_id || ''}">
+      <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0"><div class="avatar-shape"></div></div>
       <div style="flex:1;min-width:0">
         <p class="response-name">${escapeHtml(p.profiles?.display_name || '—')} <span class="empty-hint">· ${fmtDate(p.created_at)}</span></p>
         ${quoted ? `
