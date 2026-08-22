@@ -6,7 +6,7 @@ import { renderMessages } from './messages-tab.js';
 import { teardownActiveConversation } from './conversation-thread.js';
 import { fetchUnreadMessageCount } from './messaging.js';
 import { fetchPendingDmRequestCount } from './dm-requests.js';
-import { fetchUnreadNotificationCount } from './notifications.js';
+import { initNotificationCenter } from './notification-center.js';
 
 const headers = {
   accueil: { eyebrow: "mercredi · à ton rythme", title: "Bonjour" },
@@ -21,16 +21,19 @@ let currentSignOut = null;
 let activeTab = 'accueil';
 let listenersAttached = false;
 
+// DMs and notifications are deliberately kept separate (spec §6): this
+// badge only ever reflects unread messages + pending DM requests. The
+// notification center has its own independent badge on the bell icon,
+// refreshed by initNotificationCenter().
 async function refreshMessagesBadge(){
   const badge = document.getElementById('messages-tab-badge');
   if (!badge || !currentProfile) return;
   try {
-    const [unreadMessages, pendingRequests, unreadNotifications] = await Promise.all([
+    const [unreadMessages, pendingRequests] = await Promise.all([
       fetchUnreadMessageCount(currentProfile.id),
-      fetchPendingDmRequestCount(currentProfile.id),
-      fetchUnreadNotificationCount(currentProfile.id)
+      fetchPendingDmRequestCount(currentProfile.id)
     ]);
-    const total = unreadMessages + pendingRequests + unreadNotifications;
+    const total = unreadMessages + pendingRequests;
     badge.textContent = total > 9 ? '9+' : String(total);
     badge.classList.toggle('hidden', total === 0);
   } catch (err) {
@@ -41,15 +44,16 @@ async function refreshMessagesBadge(){
 async function render(tabName){
   teardownActiveConversation();
 
-  const headerEl = document.getElementById('header');
+  const headerTextEl = document.getElementById('header-text');
   const contentEl = document.getElementById('content');
   const tabs = document.querySelectorAll('.tab');
   const h = headers[tabName];
-  headerEl.innerHTML = `<p class="eyebrow">${h.eyebrow}</p><h1>${h.title}</h1>`;
+  headerTextEl.innerHTML = `<p class="eyebrow">${h.eyebrow}</p><h1>${h.title}</h1>`;
   contentEl.scrollTop = 0;
   tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
 
   refreshMessagesBadge();
+  initNotificationCenter(currentProfile);
 
   if (tabName === 'accueil') return renderAccueil(contentEl, currentProfile);
   if (tabName === 'forum') return renderForum(contentEl, currentProfile);

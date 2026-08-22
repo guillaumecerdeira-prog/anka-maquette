@@ -93,14 +93,30 @@
 
 <div class="hidden" id="app-stage">
 
-  <!-- HEADER (dynamic) -->
+  <!-- HEADER (text is dynamic, bell is persistent across tabs) -->
   <div class="app-header" id="header">
-    <p class="eyebrow">mercredi · à ton rythme</p>
-    <h1>Bonjour, Léa</h1>
+    <div id="header-text">
+      <p class="eyebrow">mercredi · à ton rythme</p>
+      <h1>Bonjour, Léa</h1>
+    </div>
+    <button type="button" class="notif-bell" id="notif-bell-btn" title="Notifications">
+      <svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8Z"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/></svg>
+      <span class="tab-badge hidden" id="notif-badge"></span>
+    </button>
   </div>
 
   <!-- CONTENT (dynamic) -->
   <div class="content" id="content"></div>
+
+  <!-- NOTIFICATION CENTER (overlay, independent of DMs) -->
+  <div class="notif-panel hidden" id="notif-panel">
+    <div class="notif-panel-header">
+      <h2>Notifications</h2>
+      <button type="button" class="btn-sm" id="notif-mark-all">Tout marquer comme lu</button>
+      <button type="button" class="notif-panel-close" id="notif-panel-close" title="Fermer">✕</button>
+    </div>
+    <div class="notif-panel-list" id="notif-panel-list"></div>
+  </div>
 
   <!-- TAB BAR -->
   <div class="tabbar">

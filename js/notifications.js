@@ -29,3 +29,12 @@ export async function markNotificationsRead(ids){
     .in('id', ids);
   if (error) throw error;
 }
+
+export async function markAllNotificationsRead(profileId){
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('profile_id', profileId)
+    .is('read_at', null);
+  if (error) throw error;
+}

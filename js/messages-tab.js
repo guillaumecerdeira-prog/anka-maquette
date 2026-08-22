@@ -1,7 +1,6 @@
 import { fetchMyConversations } from './messaging.js';
 import { fetchIncomingDmRequests, respondDmAccessRequest } from './dm-requests.js';
 import { renderConversationThread } from './conversation-thread.js';
-import { fetchMyNotifications, markNotificationsRead } from './notifications.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -18,28 +17,12 @@ const CONTEXT_LABELS = { post: 'un post du mur', challenge_response: 'une répon
 export async function renderMessages(container, myProfile){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [conversations, incomingRequests, notifications] = await Promise.all([
+  const [conversations, incomingRequests] = await Promise.all([
     fetchMyConversations(myProfile.id),
-    fetchIncomingDmRequests(myProfile.id),
-    fetchMyNotifications(myProfile.id)
+    fetchIncomingDmRequests(myProfile.id)
   ]);
 
   const rerender = () => renderMessages(container, myProfile);
-
-  const unreadNotificationIds = notifications.filter(n => !n.read_at).map(n => n.id);
-
-  const notificationsHtml = notifications.length ? `
-    <p class="section-label">Notifications</p>
-    ${notifications.map(n => `
-      <div class="admin-row">
-        <div class="admin-row-main">
-          <p class="admin-row-title">${escapeHtml(n.title)} ${!n.read_at ? '<span class="badge pending">nouveau</span>' : ''}</p>
-          <p class="admin-row-sub">${escapeHtml(n.body)}</p>
-          <p class="admin-row-sub">${fmtDate(n.created_at)}</p>
-        </div>
-      </div>
-    `).join('')}
-  ` : '';
 
   const requestsHtml = incomingRequests.length ? `
     <p class="section-label">Demandes de message</p>
@@ -70,15 +53,10 @@ export async function renderMessages(container, myProfile){
   `).join('') : `<p class="empty-hint">Pas encore de conversation. Un match, une amitié ou des messages privés ouverts en créent une automatiquement.</p>`;
 
   container.innerHTML = `
-    ${notificationsHtml}
     ${requestsHtml}
     <p class="section-label">Messages</p>
     <div id="conversation-list">${conversationsHtml}</div>
   `;
-
-  if (unreadNotificationIds.length) {
-    markNotificationsRead(unreadNotificationIds).catch(err => console.error('Impossible de marquer les notifications comme lues', err));
-  }
 
   container.querySelectorAll('[data-action="accept-dm-request"]').forEach(btn => {
     btn.addEventListener('click', async () => {
