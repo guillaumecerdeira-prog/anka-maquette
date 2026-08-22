@@ -16,6 +16,10 @@ function fmtDate(iso){
   return new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+function slugify(name){
+  return name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 async function sanctionProfile(profileId, defaultLabel){
   const type = prompt(`Action sur ce profil (${defaultLabel}) — tape "suspension", "ban" ou "reinstatement" :`, 'suspension');
   if (!type || !['suspension', 'ban', 'reinstatement'].includes(type)) return false;
@@ -93,26 +97,106 @@ const KEYWORD_CATEGORY_LABELS = {
 
 async function renderContent(){
   contentEl.innerHTML = `<p class="empty-hint">Chargement…</p>`;
-  const [{ data: interests, error: interestsError }, { data: challenges, error: challengesError }, { data: keywords, error: keywordsError }, { data: hiddenMatchSettings, error: hiddenMatchSettingsError }] = await Promise.all([
+  const [
+    { data: interests, error: interestsError },
+    { data: challenges, error: challengesError },
+    { data: keywords, error: keywordsError },
+    { data: hiddenMatchSettings, error: hiddenMatchSettingsError },
+    { data: pendingProposals, error: proposalsError },
+    { data: threadInterestIds },
+    { data: orphanThreads, error: orphanThreadsError },
+    { data: activeThreads, error: activeThreadsError }
+  ] = await Promise.all([
     supabase.from('interests').select('*').order('name'),
     supabase.from('challenges').select('*, interests(name)').order('week_start', { ascending: false }),
     supabase.from('moderation_keywords').select('*').order('category').order('keyword'),
-    supabase.from('hidden_match_settings').select('*').eq('id', 1).single()
+    supabase.from('hidden_match_settings').select('*').eq('id', 1).single(),
+    supabase.from('forum_category_proposals').select('id, proposed_name, justification, profile_id, created_at, profiles(display_name)').eq('status', 'pending').order('created_at'),
+    supabase.from('forum_threads').select('interest_id').not('interest_id', 'is', null),
+    supabase.from('forum_threads').select('id, title, created_at, profile_id, orphaned_from_name, profiles(display_name)').is('interest_id', null).order('orphaned_at', { ascending: false }),
+    supabase.from('forum_threads').select('id, title, created_at, profile_id, interest_id, interests(name), profiles(display_name)').not('interest_id', 'is', null).order('created_at', { ascending: false }).limit(30)
   ]);
 
   if (interestsError) { contentEl.innerHTML = `<p class="empty-hint">Erreur : ${escapeHtml(interestsError.message)}</p>`; return; }
 
+  const threadCountByInterest = new Map();
+  (threadInterestIds || []).forEach(t => threadCountByInterest.set(t.interest_id, (threadCountByInterest.get(t.interest_id) || 0) + 1));
+
   const interestRows = (interests || []).map(i => `
-    <div class="admin-row" data-interest-id="${i.id}">
-      <div class="admin-row-main" style="display:flex;align-items:center;gap:10px">
-        <span class="swatch" style="background:linear-gradient(135deg,${escapeHtml(i.color_from)},${escapeHtml(i.color_to)})"></span>
-        <p class="admin-row-title">${escapeHtml(i.name)}</p>
+    <div class="admin-row" data-interest-id="${i.id}" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+        <div class="admin-row-main" style="display:flex;align-items:center;gap:10px">
+          <span class="swatch" style="background:linear-gradient(135deg,${escapeHtml(i.color_from)},${escapeHtml(i.color_to)})"></span>
+          <p class="admin-row-title">${i.icon ? `${escapeHtml(i.icon)} ` : ''}${escapeHtml(i.name)}</p>
+          <span class="badge">${threadCountByInterest.get(i.id) || 0} fil${(threadCountByInterest.get(i.id) || 0) === 1 ? '' : 's'}</span>
+        </div>
+        <div class="admin-row-actions">
+          <button class="btn-sm" data-action="toggle-edit-interest" data-id="${i.id}">Modifier</button>
+          <button class="btn-sm danger" data-action="delete-interest" data-id="${i.id}">Supprimer</button>
+        </div>
       </div>
-      <div class="admin-row-actions"><button class="btn-sm danger" data-action="delete-interest" data-id="${i.id}">Supprimer</button></div>
+      <form class="admin-form-row" data-edit-interest-form="${i.id}" hidden>
+        <input type="text" name="name" value="${escapeHtml(i.name)}" placeholder="Nom" required maxlength="40">
+        <input type="text" name="icon" value="${escapeHtml(i.icon || '')}" placeholder="Icône (emoji)" maxlength="4" style="width:90px">
+        <input type="color" name="color_from" value="${escapeHtml(i.color_from)}" title="Couleur 1">
+        <input type="color" name="color_to" value="${escapeHtml(i.color_to)}" title="Couleur 2">
+        <button type="submit" class="btn-sm primary">Enregistrer</button>
+      </form>
     </div>
-  `).join('') || `<p class="empty-hint">Aucun centre d'intérêt.</p>`;
+  `).join('') || `<p class="empty-hint">Aucune catégorie.</p>`;
 
   const interestOptions = (interests || []).map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
+
+  const proposalRows = (pendingProposals || []).map(p => `
+    <div class="admin-row" data-proposal-id="${p.id}" style="flex-direction:column;align-items:stretch;gap:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px">
+        <div class="admin-row-main">
+          <p class="admin-row-title">${escapeHtml(p.proposed_name)}</p>
+          <p class="admin-row-sub">${escapeHtml(p.justification)}</p>
+          <p class="admin-row-sub">Par ${escapeHtml(p.profiles?.display_name || '—')} · ${fmtDate(p.created_at)}</p>
+        </div>
+        <div class="admin-row-actions">
+          <button class="btn-sm" data-action="toggle-accept-proposal" data-id="${p.id}">Accepter</button>
+          <button class="btn-sm danger" data-action="refuse-proposal" data-id="${p.id}">Refuser</button>
+        </div>
+      </div>
+      <form class="admin-form-row" data-accept-proposal-form="${p.id}" hidden>
+        <input type="text" name="final_name" value="${escapeHtml(p.proposed_name)}" placeholder="Nom définitif" required maxlength="40">
+        <input type="text" name="icon" placeholder="Icône (emoji)" maxlength="4" style="width:90px">
+        <input type="color" name="color_from" value="#cddccf" title="Couleur 1">
+        <input type="color" name="color_to" value="#6e8c7c" title="Couleur 2">
+        <button type="submit" class="btn-sm primary">Publier la catégorie</button>
+      </form>
+    </div>
+  `).join('') || (proposalsError ? `<p class="empty-hint">Erreur : ${escapeHtml(proposalsError.message)}</p>` : `<p class="empty-hint">Aucune proposition en attente.</p>`);
+
+  const orphanRows = (orphanThreads || []).map(t => `
+    <div class="admin-row" data-orphan-thread-id="${t.id}">
+      <div class="admin-row-main">
+        <p class="admin-row-title">${escapeHtml(t.title)}</p>
+        <p class="admin-row-sub">Catégorie d'origine (supprimée) : ${escapeHtml(t.orphaned_from_name || '—')}</p>
+        <p class="admin-row-sub">Par ${escapeHtml(t.profiles?.display_name || '—')} · ${fmtDate(t.created_at)}</p>
+      </div>
+      <div class="admin-row-actions">
+        <select data-move-target="${t.id}">${interestOptions}</select>
+        <button class="btn-sm primary" data-action="move-orphan-thread" data-id="${t.id}">Déplacer</button>
+      </div>
+    </div>
+  `).join('') || (orphanThreadsError ? `<p class="empty-hint">Erreur : ${escapeHtml(orphanThreadsError.message)}</p>` : `<p class="empty-hint">Aucun fil à replacer.</p>`);
+
+  const activeThreadRows = (activeThreads || []).map(t => `
+    <div class="admin-row" data-thread-mgmt-id="${t.id}">
+      <div class="admin-row-main">
+        <p class="admin-row-title">${escapeHtml(t.title)}</p>
+        <p class="admin-row-sub">${escapeHtml(t.interests?.name || '—')} · par ${escapeHtml(t.profiles?.display_name || '—')} · ${fmtDate(t.created_at)}</p>
+      </div>
+      <div class="admin-row-actions">
+        <select data-move-target="${t.id}">${interestOptions}</select>
+        <button class="btn-sm" data-action="move-thread" data-id="${t.id}">Déplacer</button>
+        <button class="btn-sm danger" data-action="delete-thread" data-id="${t.id}">Supprimer</button>
+      </div>
+    </div>
+  `).join('') || (activeThreadsError ? `<p class="empty-hint">Erreur : ${escapeHtml(activeThreadsError.message)}</p>` : `<p class="empty-hint">Aucun fil publié.</p>`);
 
   const challengeRows = (challenges || []).map(c => `
     <div class="admin-row" data-challenge-id="${c.id}">
@@ -137,7 +221,8 @@ async function renderContent(){
   `).join('') || (keywordsError ? `<p class="empty-hint">Erreur : ${escapeHtml(keywordsError.message)}</p>` : `<p class="empty-hint">Aucun mot-clé pour l'instant — la file de modération automatique restera vide tant que la liste est vide.</p>`);
 
   contentEl.innerHTML = `
-    <p class="admin-section-title">Centres d'intérêt / catégories</p>
+    <p class="admin-section-title">Catégories du forum</p>
+    <p class="empty-hint" style="margin-bottom:14px">Créées ici directement, ou finalisées à partir d'une proposition d'utilisateur ci-dessous.</p>
     <form class="admin-form-row" id="add-interest-form">
       <input type="text" name="name" placeholder="Nom" required maxlength="40">
       <input type="color" name="color_from" value="#cddccf" title="Couleur 1">
@@ -145,6 +230,16 @@ async function renderContent(){
       <button type="submit" class="btn-sm primary">Ajouter</button>
     </form>
     <div class="admin-list">${interestRows}</div>
+
+    <p class="admin-section-title">Propositions de catégories en attente</p>
+    <div class="admin-list">${proposalRows}</div>
+
+    <p class="admin-section-title">Fils à replacer</p>
+    <p class="empty-hint" style="margin-bottom:14px">Fils dont la catégorie a été supprimée — ils restent ici, invisibles des utilisateurs, jusqu'à ce qu'ils soient déplacés vers une catégorie existante.</p>
+    <div class="admin-list">${orphanRows}</div>
+
+    <p class="admin-section-title">Gestion des fils du forum</p>
+    <div class="admin-list">${activeThreadRows}</div>
 
     <p class="admin-section-title">Défis hebdomadaires</p>
     <form class="admin-form-row" id="add-challenge-form">
@@ -221,7 +316,7 @@ async function renderContent(){
     const name = fd.get('name').trim();
     const { error } = await supabase.from('interests').insert({
       name,
-      slug: name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+      slug: slugify(name),
       color_from: fd.get('color_from'),
       color_to: fd.get('color_to')
     });
@@ -241,11 +336,95 @@ async function renderContent(){
     renderContent();
   });
 
+  contentEl.querySelectorAll('[data-action="toggle-edit-interest"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const form = contentEl.querySelector(`[data-edit-interest-form="${btn.dataset.id}"]`);
+      form.hidden = !form.hidden;
+    });
+  });
+
+  contentEl.querySelectorAll('[data-edit-interest-form]').forEach(form => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(event.target);
+      const name = fd.get('name').trim();
+      const { error } = await supabase.from('interests').update({
+        name,
+        slug: slugify(name),
+        icon: fd.get('icon').trim() || null,
+        color_from: fd.get('color_from'),
+        color_to: fd.get('color_to')
+      }).eq('id', form.dataset.editInterestForm);
+      if (error) { alert(`Erreur : ${error.message}`); return; }
+      renderContent();
+    });
+  });
+
   contentEl.querySelectorAll('[data-action="delete-interest"]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Supprimer ce centre d\'intérêt ?')) return;
-      const { error } = await supabase.from('interests').delete().eq('id', btn.dataset.id);
+      const count = threadCountByInterest.get(btn.dataset.id) || 0;
+      const warning = count
+        ? `Supprimer cette catégorie ? Elle disparaîtra immédiatement du forum. Ses ${count} fil${count === 1 ? '' : 's'} ne seront pas supprimés : ils basculeront dans "Fils à replacer".`
+        : 'Supprimer cette catégorie ?';
+      if (!confirm(warning)) return;
+      const { error } = await supabase.rpc('supervisor_delete_forum_category', { target_interest_id: btn.dataset.id });
       if (error) { alert(`Impossible de supprimer : ${error.message}`); return; }
+      renderContent();
+    });
+  });
+
+  contentEl.querySelectorAll('[data-action="toggle-accept-proposal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const form = contentEl.querySelector(`[data-accept-proposal-form="${btn.dataset.id}"]`);
+      form.hidden = !form.hidden;
+    });
+  });
+
+  contentEl.querySelectorAll('[data-accept-proposal-form]').forEach(form => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(event.target);
+      const finalName = fd.get('final_name').trim();
+      const { error } = await supabase.rpc('supervisor_accept_category_proposal', {
+        proposal_id: form.dataset.acceptProposalForm,
+        final_name: finalName,
+        final_slug: slugify(finalName),
+        final_color_from: fd.get('color_from'),
+        final_color_to: fd.get('color_to'),
+        final_icon: fd.get('icon').trim() || null
+      });
+      if (error) { alert(`Erreur : ${error.message}`); return; }
+      renderContent();
+    });
+  });
+
+  contentEl.querySelectorAll('[data-action="refuse-proposal"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const reason = prompt('Motif du refus (obligatoire, transmis à l\'utilisateur) :', '');
+      if (!reason || !reason.trim()) { if (reason !== null) alert('Un motif est requis.'); return; }
+      const { error } = await supabase.rpc('supervisor_refuse_category_proposal', { proposal_id: btn.dataset.id, reason: reason.trim() });
+      if (error) { alert(`Erreur : ${error.message}`); return; }
+      renderContent();
+    });
+  });
+
+  contentEl.querySelectorAll('[data-action="move-orphan-thread"], [data-action="move-thread"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const select = contentEl.querySelector(`[data-move-target="${btn.dataset.id}"]`);
+      const newInterestId = select?.value;
+      if (!newInterestId) { alert('Choisis une catégorie.'); return; }
+      const { error } = await supabase.rpc('supervisor_move_forum_thread', { target_thread_id: btn.dataset.id, new_interest_id: newInterestId });
+      if (error) { alert(`Erreur : ${error.message}`); return; }
+      renderContent();
+    });
+  });
+
+  contentEl.querySelectorAll('[data-action="delete-thread"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const reason = prompt('Motif de suppression (obligatoire, transmis à l\'auteur) :', '');
+      if (!reason || !reason.trim()) { if (reason !== null) alert('Un motif est requis.'); return; }
+      const { error } = await supabase.rpc('supervisor_delete_forum_thread', { target_thread_id: btn.dataset.id, reason: reason.trim() });
+      if (error) { alert(`Erreur : ${error.message}`); return; }
       renderContent();
     });
   });

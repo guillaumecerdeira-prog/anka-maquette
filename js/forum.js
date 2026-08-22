@@ -12,14 +12,29 @@ function fmtDate(iso){
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
+const PROPOSAL_STATUS_LABEL = { pending: 'en attente', accepted: 'acceptée', refused: 'refusée' };
+const PROPOSAL_STATUS_BADGE = { pending: 'pending', accepted: '', refused: 'banned' };
+
+async function fetchMyCategoryProposals(profileId){
+  const { data, error } = await supabase
+    .from('forum_category_proposals')
+    .select('id, proposed_name, status, decision_reason, created_at')
+    .eq('profile_id', profileId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error) throw error;
+  return data || [];
+}
+
 async function renderThreadList(container, myProfile){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [interests, threadsResult, allThreadsResult, allPostsResult] = await Promise.all([
+  const [interests, threadsResult, allThreadsResult, allPostsResult, myProposals] = await Promise.all([
     fetchInterestsCatalog(),
-    supabase.from('forum_threads').select('id, title, created_at, interest_id, interests(name)').order('created_at', { ascending: false }).limit(15),
-    supabase.from('forum_threads').select('interest_id'),
-    supabase.from('forum_posts').select('thread_id')
+    supabase.from('forum_threads').select('id, title, created_at, interest_id, interests(name)').not('interest_id', 'is', null).order('created_at', { ascending: false }).limit(15),
+    supabase.from('forum_threads').select('interest_id').not('interest_id', 'is', null),
+    supabase.from('forum_posts').select('thread_id'),
+    fetchMyCategoryProposals(myProfile.id)
   ]);
 
   const countsByInterest = new Map();
@@ -30,7 +45,7 @@ async function renderThreadList(container, myProfile){
   const catGrid = interests.map(i => `
     <div class="cat-card">
       <div class="cat-mark" style="background:linear-gradient(135deg,${escapeHtml(i.color_from)},${escapeHtml(i.color_to)})"></div>
-      <h3>${escapeHtml(i.name)}</h3>
+      <h3>${i.icon ? `${escapeHtml(i.icon)} ` : ''}${escapeHtml(i.name)}</h3>
       <p>${countsByInterest.get(i.id) || 0} discussion${(countsByInterest.get(i.id) || 0) === 1 ? '' : 's'}</p>
     </div>
   `).join('');
@@ -48,9 +63,30 @@ async function renderThreadList(container, myProfile){
 
   const interestOptions = interests.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
 
+  const proposalStatusHtml = myProposals.length ? `
+    <p class="section-label">Tes propositions de catégorie</p>
+    <div class="admin-list" style="margin-bottom:10px">${myProposals.map(p => `
+      <div class="admin-row">
+        <div class="admin-row-main">
+          <p class="admin-row-title">${escapeHtml(p.proposed_name)} <span class="badge ${PROPOSAL_STATUS_BADGE[p.status]}">${escapeHtml(PROPOSAL_STATUS_LABEL[p.status])}</span></p>
+          ${p.status === 'refused' && p.decision_reason ? `<p class="admin-row-sub">Motif : ${escapeHtml(p.decision_reason)}</p>` : ''}
+        </div>
+      </div>
+    `).join('')}</div>
+  ` : '';
+
   container.innerHTML = `
     <p class="section-label">Catégories</p>
     <div class="cat-grid">${catGrid}</div>
+
+    <button class="btn-sm" id="propose-category-toggle" style="margin-top:10px">Proposer une catégorie</button>
+    <form class="admin-form-row" id="propose-category-form" style="margin-top:10px" hidden>
+      <input type="text" name="proposed_name" placeholder="Nom proposé" required maxlength="40" style="flex:1;min-width:140px">
+      <input type="text" name="justification" placeholder="Pourquoi cette catégorie ?" required maxlength="240" style="flex:2;min-width:200px">
+      <button type="submit" class="btn-sm primary">Envoyer</button>
+    </form>
+
+    ${proposalStatusHtml}
 
     <p class="section-label">Fils récents</p>
     <div id="thread-list">${threadRows}</div>
@@ -62,6 +98,22 @@ async function renderThreadList(container, myProfile){
       <button type="submit" class="btn-sm primary">Publier</button>
     </form>
   `;
+
+  const proposeToggleBtn = document.getElementById('propose-category-toggle');
+  const proposeForm = document.getElementById('propose-category-form');
+  proposeToggleBtn.addEventListener('click', () => { proposeForm.hidden = !proposeForm.hidden; });
+
+  proposeForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const { error } = await supabase.from('forum_category_proposals').insert({
+      profile_id: myProfile.id,
+      proposed_name: fd.get('proposed_name').trim(),
+      justification: fd.get('justification').trim()
+    });
+    if (error) { alert(`Erreur : ${error.message}`); return; }
+    renderThreadList(container, myProfile);
+  });
 
   container.querySelectorAll('[data-thread-id]').forEach(row => {
     row.addEventListener('click', () => renderThreadDetail(container, myProfile, row.dataset.threadId));
