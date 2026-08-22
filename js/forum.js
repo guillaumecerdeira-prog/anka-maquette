@@ -12,6 +12,17 @@ function fmtDate(iso){
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
 }
 
+function fmtRelative(iso){
+  const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (diffMin < 1) return "à l'instant";
+  if (diffMin < 60) return `il y a ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `il y a ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return 'hier';
+  return `il y a ${diffD}j`;
+}
+
 const PROPOSAL_STATUS_LABEL = { pending: 'en attente', accepted: 'acceptée', refused: 'refusée' };
 const PROPOSAL_STATUS_BADGE = { pending: 'pending', accepted: '', refused: 'banned' };
 
@@ -32,23 +43,53 @@ async function renderThreadList(container, myProfile){
   const [interests, threadsResult, allThreadsResult, allPostsResult, myProposals] = await Promise.all([
     fetchInterestsCatalog(),
     supabase.from('forum_threads').select('id, title, created_at, interest_id, interests(name)').not('interest_id', 'is', null).order('created_at', { ascending: false }).limit(15),
-    supabase.from('forum_threads').select('interest_id').not('interest_id', 'is', null),
-    supabase.from('forum_posts').select('thread_id'),
+    supabase.from('forum_threads').select('id, interest_id, created_at, profiles(display_name)').not('interest_id', 'is', null),
+    supabase.from('forum_posts').select('thread_id, created_at, profiles(display_name)'),
     fetchMyCategoryProposals(myProfile.id)
   ]);
 
-  const countsByInterest = new Map();
-  (allThreadsResult.data || []).forEach(t => countsByInterest.set(t.interest_id, (countsByInterest.get(t.interest_id) || 0) + 1));
   const repliesByThread = new Map();
   (allPostsResult.data || []).forEach(p => repliesByThread.set(p.thread_id, (repliesByThread.get(p.thread_id) || 0) + 1));
 
-  const catGrid = interests.map(i => `
-    <div class="cat-card">
-      <div class="cat-mark" style="background:linear-gradient(135deg,${escapeHtml(i.color_from)},${escapeHtml(i.color_to)})"></div>
-      <h3>${i.icon ? `${escapeHtml(i.icon)} ` : ''}${escapeHtml(i.name)}</h3>
-      <p>${countsByInterest.get(i.id) || 0} discussion${(countsByInterest.get(i.id) || 0) === 1 ? '' : 's'}</p>
-    </div>
-  `).join('');
+  // Per-category: thread count + whichever is more recent, the last thread
+  // opened or the last reply posted in it (and by whom) — "dernier message".
+  const activityByInterest = new Map();
+  const threadToInterest = new Map();
+  (allThreadsResult.data || []).forEach(t => {
+    threadToInterest.set(t.id, t.interest_id);
+    const entry = activityByInterest.get(t.interest_id) || { count: 0, lastAt: null, lastAuthor: null };
+    entry.count += 1;
+    if (!entry.lastAt || new Date(t.created_at) > new Date(entry.lastAt)) {
+      entry.lastAt = t.created_at;
+      entry.lastAuthor = t.profiles?.display_name;
+    }
+    activityByInterest.set(t.interest_id, entry);
+  });
+  (allPostsResult.data || []).forEach(p => {
+    const interestId = threadToInterest.get(p.thread_id);
+    const entry = activityByInterest.get(interestId);
+    if (!entry) return;
+    if (!entry.lastAt || new Date(p.created_at) > new Date(entry.lastAt)) {
+      entry.lastAt = p.created_at;
+      entry.lastAuthor = p.profiles?.display_name;
+    }
+  });
+
+  const catList = interests.map(i => {
+    const activity = activityByInterest.get(i.id);
+    const isEmpty = !activity;
+    return `
+      <div class="cat-row${isEmpty ? ' is-empty' : ''}">
+        <div class="cat-icon" style="${isEmpty ? '' : `background:linear-gradient(135deg,${escapeHtml(i.color_from)},${escapeHtml(i.color_to)})`}">${i.icon ? escapeHtml(i.icon) : '💬'}</div>
+        <div>
+          <p class="cat-row-name">${escapeHtml(i.name)}</p>
+          <p class="cat-row-meta">${isEmpty
+            ? "Aucun fil pour l'instant"
+            : `${activity.count} fil${activity.count === 1 ? '' : 's'} · dernier message par ${escapeHtml(activity.lastAuthor || '—')} · ${fmtRelative(activity.lastAt)}`}</p>
+        </div>
+      </div>
+    `;
+  }).join('');
 
   const threads = threadsResult.data || [];
   const threadRows = threads.length ? threads.map(t => `
@@ -77,7 +118,7 @@ async function renderThreadList(container, myProfile){
 
   container.innerHTML = `
     <p class="section-label">Catégories</p>
-    <div class="cat-grid">${catGrid}</div>
+    <div class="cat-list">${catList}</div>
 
     <button class="btn-sm" id="propose-category-toggle" style="margin-top:10px">Proposer une catégorie</button>
     <form class="admin-form-row" id="propose-category-form" style="margin-top:10px" hidden>
