@@ -41,7 +41,7 @@ async function refreshMessagesBadge(){
   }
 }
 
-async function render(tabName){
+async function render(tabName, options = {}){
   teardownActiveConversation();
 
   const headerTextEl = document.getElementById('header-text');
@@ -56,10 +56,17 @@ async function render(tabName){
   initNotificationCenter(currentProfile);
 
   if (tabName === 'accueil') return renderAccueil(contentEl, currentProfile);
-  if (tabName === 'forum') return renderForum(contentEl, currentProfile);
+  if (tabName === 'forum') return renderForum(contentEl, currentProfile, options);
   if (tabName === 'defis') return renderDefis(contentEl, currentProfile);
   if (tabName === 'messages') return renderMessages(contentEl, currentProfile);
   return renderProfil(contentEl, currentProfile, { signOut: currentSignOut });
+}
+
+// Lets other modules (e.g. the notification center) jump straight to a
+// given tab/screen, the same way clicking a tab button would.
+export function navigateTo(tabName, options = {}){
+  activeTab = tabName;
+  render(tabName, options);
 }
 
 // Called every time the app view is (re-)entered, including switching

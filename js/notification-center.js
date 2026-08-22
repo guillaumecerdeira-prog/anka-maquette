@@ -1,4 +1,6 @@
+import { supabase } from './supabase-client.js';
 import { fetchMyNotifications, fetchUnreadNotificationCount, markNotificationsRead, markAllNotificationsRead } from './notifications.js';
+import { navigateTo } from './app.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -12,6 +14,7 @@ function fmtDate(iso){
 
 let currentProfile = null;
 let listenersAttached = false;
+let notifications = [];
 
 async function refreshBadge(){
   const badge = document.getElementById('notif-badge');
@@ -25,11 +28,36 @@ async function refreshBadge(){
   }
 }
 
+// Where clicking a notification should lead. Most types point straight at
+// the forum (the only screen with real content to jump to so far); a like
+// notification stores the like's own id (needed to delete it precisely on
+// unlike, see the DB trigger), so it takes one or two extra lookups to
+// resolve the actual thread it belongs to.
+async function resolveDestination(n){
+  if (n.type === 'forum_reply_posted') return { tab: 'forum', options: { threadId: n.related_id } };
+  if (n.type === 'match_created') return { tab: 'messages', options: {} };
+  if (n.type === 'forum_thread_deleted' || n.type.startsWith('category_proposal_')) return { tab: 'forum', options: {} };
+
+  if (n.type === 'forum_like_received') {
+    const { data: like } = await supabase.from('forum_likes').select('target_type, target_id').eq('id', n.related_id).maybeSingle();
+    if (!like) return { tab: 'forum', options: {} };
+    if (like.target_type === 'forum_thread') return { tab: 'forum', options: { threadId: like.target_id } };
+    const { data: post } = await supabase.from('forum_posts').select('thread_id').eq('id', like.target_id).maybeSingle();
+    return post ? { tab: 'forum', options: { threadId: post.thread_id } } : { tab: 'forum', options: {} };
+  }
+
+  return null;
+}
+
+function closePanel(){
+  document.getElementById('notif-panel').classList.add('hidden');
+}
+
 async function renderList(){
   const listEl = document.getElementById('notif-panel-list');
   listEl.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const notifications = await fetchMyNotifications(currentProfile.id);
+  notifications = await fetchMyNotifications(currentProfile.id);
 
   // Chronological only, no grouping by type. Marking read happens either one
   // at a time (clicking a specific notification) or all at once (button
@@ -46,14 +74,17 @@ async function renderList(){
 
   listEl.querySelectorAll('[data-notif-id]').forEach(row => {
     row.addEventListener('click', async () => {
-      if (!row.classList.contains('is-unread')) return;
-      row.classList.remove('is-unread');
-      row.querySelector('.badge')?.remove();
-      try {
-        await markNotificationsRead([row.dataset.notifId]);
-        refreshBadge();
-      } catch (err) {
-        console.error('Impossible de marquer la notification comme lue', err);
+      if (row.classList.contains('is-unread')) {
+        row.classList.remove('is-unread');
+        row.querySelector('.badge')?.remove();
+        markNotificationsRead([row.dataset.notifId]).then(refreshBadge).catch(err => console.error('Impossible de marquer la notification comme lue', err));
+      }
+
+      const notif = notifications.find(x => x.id === row.dataset.notifId);
+      const destination = notif ? await resolveDestination(notif) : null;
+      if (destination) {
+        closePanel();
+        navigateTo(destination.tab, destination.options);
       }
     });
   });
@@ -71,14 +102,31 @@ export function initNotificationCenter(myProfile){
 
   const bellBtn = document.getElementById('notif-bell-btn');
   const panel = document.getElementById('notif-panel');
-  const closeBtn = document.getElementById('notif-panel-close');
+  const backBtn = document.getElementById('notif-panel-back');
   const markAllBtn = document.getElementById('notif-mark-all');
 
   bellBtn.addEventListener('click', () => {
     panel.classList.remove('hidden');
+    history.pushState({ notifPanel: true }, '');
     renderList();
   });
-  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+
+  // The back button reuses the pushed history entry (so a device's physical
+  // back gesture and this button behave identically) rather than closing
+  // the panel directly — otherwise a stray history entry would linger and
+  // the next real back-press would silently no-op instead of leaving.
+  backBtn.addEventListener('click', () => {
+    if (history.state && history.state.notifPanel) {
+      history.back();
+    } else {
+      closePanel();
+    }
+  });
+
+  window.addEventListener('popstate', () => {
+    if (!panel.classList.contains('hidden')) closePanel();
+  });
+
   markAllBtn.addEventListener('click', async () => {
     markAllBtn.disabled = true;
     try {

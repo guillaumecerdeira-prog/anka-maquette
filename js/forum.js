@@ -402,6 +402,10 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
   });
 }
 
-export async function renderForum(container, myProfile){
+export async function renderForum(container, myProfile, { threadId } = {}){
+  if (threadId) {
+    await renderThreadDetail(container, myProfile, threadId, () => renderThreadList(container, myProfile));
+    return;
+  }
   await renderThreadList(container, myProfile);
 }

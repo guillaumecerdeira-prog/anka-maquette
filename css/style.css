@@ -131,14 +131,6 @@
     flex:1;
     color: var(--ink);
   }
-  .notif-panel-close{
-    background:none;
-    border:none;
-    font-size:16px;
-    color: var(--ink-soft);
-    cursor:pointer;
-    padding:4px;
-  }
   .notif-panel-list{
     flex:1;
     overflow-y:auto;
