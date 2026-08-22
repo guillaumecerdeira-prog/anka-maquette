@@ -79,7 +79,7 @@ async function renderThreadList(container, myProfile){
     const activity = activityByInterest.get(i.id);
     const isEmpty = !activity;
     return `
-      <div class="cat-row${isEmpty ? ' is-empty' : ''}">
+      <div class="cat-row${isEmpty ? ' is-empty' : ''}" data-interest-id="${i.id}" style="cursor:pointer">
         <div class="cat-icon" style="${isEmpty ? '' : `background:linear-gradient(135deg,${escapeHtml(i.color_from)},${escapeHtml(i.color_to)})`}">${i.icon ? escapeHtml(i.icon) : '💬'}</div>
         <div>
           <p class="cat-row-name">${escapeHtml(i.name)}</p>
@@ -101,8 +101,6 @@ async function renderThreadList(container, myProfile){
       <span class="thread-meta">${repliesByThread.get(t.id) || 0} réponse${(repliesByThread.get(t.id) || 0) === 1 ? '' : 's'}</span>
     </div>
   `).join('') : `<p class="empty-hint">Aucun fil pour l'instant.</p>`;
-
-  const interestOptions = interests.map(i => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join('');
 
   const proposalStatusHtml = myProposals.length ? `
     <p class="section-label">Tes propositions de catégorie</p>
@@ -131,13 +129,6 @@ async function renderThreadList(container, myProfile){
 
     <p class="section-label">Fils récents</p>
     <div id="thread-list">${threadRows}</div>
-
-    <button class="btn btn-ghost" id="new-thread-toggle" style="width:100%;margin-top:14px">Démarrer un fil</button>
-    <form class="admin-form-row" id="new-thread-form" style="margin-top:12px" hidden>
-      <select name="interest_id" required>${interestOptions}</select>
-      <input type="text" name="title" placeholder="Ta question" required maxlength="140" style="flex:1;min-width:160px">
-      <button type="submit" class="btn-sm primary">Publier</button>
-    </form>
   `;
 
   const proposeToggleBtn = document.getElementById('propose-category-toggle');
@@ -156,8 +147,67 @@ async function renderThreadList(container, myProfile){
     renderThreadList(container, myProfile);
   });
 
+  const rerenderList = () => renderThreadList(container, myProfile);
   container.querySelectorAll('[data-thread-id]').forEach(row => {
-    row.addEventListener('click', () => renderThreadDetail(container, myProfile, row.dataset.threadId));
+    row.addEventListener('click', () => renderThreadDetail(container, myProfile, row.dataset.threadId, rerenderList));
+  });
+  container.querySelectorAll('[data-interest-id]').forEach(row => {
+    const interest = interests.find(i => i.id === row.dataset.interestId);
+    row.addEventListener('click', () => renderCategoryDetail(container, myProfile, interest, rerenderList));
+  });
+}
+
+async function renderCategoryDetail(container, myProfile, interest, onBack){
+  container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
+
+  const [{ data: threads, error: threadsError }, { data: posts }] = await Promise.all([
+    supabase.from('forum_threads').select('id, title, created_at, profiles(display_name)').eq('interest_id', interest.id).order('created_at', { ascending: false }),
+    supabase.from('forum_posts').select('thread_id, created_at, profiles(display_name)')
+  ]);
+
+  const activityByThread = new Map();
+  (threads || []).forEach(t => activityByThread.set(t.id, { count: 0, lastAt: t.created_at, lastAuthor: t.profiles?.display_name }));
+  (posts || []).forEach(p => {
+    const entry = activityByThread.get(p.thread_id);
+    if (!entry) return;
+    entry.count += 1;
+    if (new Date(p.created_at) > new Date(entry.lastAt)) {
+      entry.lastAt = p.created_at;
+      entry.lastAuthor = p.profiles?.display_name;
+    }
+  });
+
+  const threadRows = (threads || []).length ? threads.map(t => {
+    const activity = activityByThread.get(t.id);
+    return `
+      <div class="thread" data-thread-id="${t.id}" style="cursor:pointer">
+        <div>
+          <span class="thread-tag">par ${escapeHtml(t.profiles?.display_name || '—')}</span>
+          <p>${escapeHtml(t.title)}</p>
+          <p class="empty-hint" style="margin-top:3px">dernier message par ${escapeHtml(activity.lastAuthor || '—')} · ${fmtRelative(activity.lastAt)}</p>
+        </div>
+        <span class="thread-meta">${activity.count} réponse${activity.count === 1 ? '' : 's'}</span>
+      </div>
+    `;
+  }).join('') : `<p class="empty-hint">Aucun fil pour l'instant — sois le premier·ère.</p>`;
+
+  container.innerHTML = `
+    <button class="btn-sm" id="back-to-categories" style="margin-bottom:14px">← Retour</button>
+    <p class="section-label">${interest.icon ? `${escapeHtml(interest.icon)} ` : ''}${escapeHtml(interest.name)}</p>
+    ${threadsError ? `<p class="empty-hint">Erreur : ${escapeHtml(threadsError.message)}</p>` : threadRows}
+
+    <button class="btn btn-ghost" id="new-thread-toggle" style="width:100%;margin-top:14px">Démarrer un fil</button>
+    <form class="admin-form-row" id="new-thread-form" style="margin-top:12px" hidden>
+      <input type="text" name="title" placeholder="Ta question" required maxlength="140" style="flex:1;min-width:160px">
+      <button type="submit" class="btn-sm primary">Publier</button>
+    </form>
+  `;
+
+  const rerender = () => renderCategoryDetail(container, myProfile, interest, onBack);
+
+  document.getElementById('back-to-categories').addEventListener('click', onBack);
+  container.querySelectorAll('[data-thread-id]').forEach(row => {
+    row.addEventListener('click', () => renderThreadDetail(container, myProfile, row.dataset.threadId, rerender));
   });
 
   const toggleBtn = document.getElementById('new-thread-toggle');
@@ -168,16 +218,16 @@ async function renderThreadList(container, myProfile){
     event.preventDefault();
     const fd = new FormData(event.target);
     const { error } = await supabase.from('forum_threads').insert({
-      interest_id: fd.get('interest_id'),
+      interest_id: interest.id,
       profile_id: myProfile.id,
       title: fd.get('title').trim()
     });
     if (error) { alert(`Erreur : ${error.message}`); return; }
-    renderThreadList(container, myProfile);
+    rerender();
   });
 }
 
-async function renderThreadDetail(container, myProfile, threadId){
+async function renderThreadDetail(container, myProfile, threadId, onBack){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
   const [{ data: thread, error: threadError }, { data: posts, error: postsError }] = await Promise.all([
@@ -217,7 +267,7 @@ async function renderThreadDetail(container, myProfile, threadId){
 
   attachReportHandlers(container, myProfile);
 
-  document.getElementById('back-to-list').addEventListener('click', () => renderThreadList(container, myProfile));
+  document.getElementById('back-to-list').addEventListener('click', onBack);
   document.getElementById('reply-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const fd = new FormData(event.target);
@@ -225,7 +275,7 @@ async function renderThreadDetail(container, myProfile, threadId){
     if (!body) return;
     const { error } = await supabase.from('forum_posts').insert({ thread_id: threadId, profile_id: myProfile.id, body });
     if (error) { alert(`Erreur : ${error.message}`); return; }
-    renderThreadDetail(container, myProfile, threadId);
+    renderThreadDetail(container, myProfile, threadId, onBack);
   });
 }
 
