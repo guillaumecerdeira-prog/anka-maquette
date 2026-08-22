@@ -227,22 +227,48 @@ async function renderCategoryDetail(container, myProfile, interest, onBack){
   });
 }
 
+// Threaded display, capped at 2 levels: a reply targets either the thread
+// itself (parent_post_id null, depth 0) or a specific post. Replying to a
+// depth-0 post creates a depth-1 child; replying to a depth-1 post attaches
+// the new post to the SAME depth-1 parent instead of nesting a 3rd level
+// (see effectiveParentId below) — so grouping by parent_post_id alone is
+// enough, there's never a grandchild to walk.
+function buildPostTree(posts){
+  const childrenByParent = new Map();
+  posts.filter(p => p.parent_post_id).forEach(p => {
+    if (!childrenByParent.has(p.parent_post_id)) childrenByParent.set(p.parent_post_id, []);
+    childrenByParent.get(p.parent_post_id).push(p);
+  });
+  const ordered = [];
+  posts.filter(p => !p.parent_post_id).forEach(p => {
+    ordered.push({ post: p, depth: 0 });
+    (childrenByParent.get(p.id) || []).forEach(child => ordered.push({ post: child, depth: 1 }));
+  });
+  return ordered;
+}
+
 async function renderThreadDetail(container, myProfile, threadId, onBack){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
   const [{ data: thread, error: threadError }, { data: posts, error: postsError }] = await Promise.all([
     supabase.from('forum_threads').select('id, title, created_at, profile_id, interests(name), profiles(display_name)').eq('id', threadId).maybeSingle(),
-    supabase.from('forum_posts').select('id, body, created_at, profile_id, profiles(display_name, avatar_style)').eq('thread_id', threadId).order('created_at', { ascending: true })
+    supabase.from('forum_posts').select('id, body, created_at, profile_id, parent_post_id, profiles(display_name, avatar_style)').eq('thread_id', threadId).order('created_at', { ascending: true })
   ]);
 
   if (threadError || !thread) { container.innerHTML = `<p class="empty-hint">Fil introuvable.</p>`; return; }
 
-  const postRows = (posts || []).length ? posts.map(p => `
-    <div class="response-row">
-      <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0"><div class="avatar-shape"></div></div>
+  const tree = buildPostTree(posts || []);
+  const postRows = tree.length ? tree.map(({ post: p, depth }) => `
+    <div class="response-row${depth ? ' is-reply' : ''}" data-post-id="${p.id}" data-parent-id="${p.parent_post_id || ''}">
+      <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:${depth ? 30 : 36}px;height:${depth ? 30 : 36}px;flex-shrink:0"><div class="avatar-shape"></div></div>
       <div style="flex:1;min-width:0">
         <p class="response-name">${escapeHtml(p.profiles?.display_name || '—')} <span class="empty-hint">· ${fmtDate(p.created_at)}</span></p>
         <p class="response-text">${escapeHtml(p.body)}</p>
+        <button class="btn-sm" data-action="toggle-nested-reply" data-id="${p.id}" style="margin-top:6px">Répondre</button>
+        <form class="nested-reply-form" data-target-id="${p.id}" hidden style="margin-top:8px">
+          <textarea name="body" placeholder="Ta réponse…" required maxlength="500" style="width:100%;min-height:56px;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);resize:vertical"></textarea>
+          <button type="submit" class="btn-sm primary" style="margin-top:6px">Envoyer</button>
+        </form>
       </div>
       ${p.profile_id !== myProfile.id ? reportButtonHtml('forum_post', p.id) : ''}
     </div>
@@ -260,12 +286,18 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
     <div class="admin-list">${postRows}</div>
 
     <form id="reply-form" style="margin-top:16px">
-      <textarea name="body" placeholder="Ta réponse…" required maxlength="500" style="width:100%;min-height:70px;font-family:var(--font-body);font-size:13px;padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);resize:vertical"></textarea>
+      <textarea name="body" placeholder="Ta réponse au fil…" required maxlength="500" style="width:100%;min-height:70px;font-family:var(--font-body);font-size:13px;padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);resize:vertical"></textarea>
       <button type="submit" class="btn btn-primary" style="margin-top:8px;width:100%">Répondre</button>
     </form>
   `;
 
   attachReportHandlers(container, myProfile);
+
+  const rerender = () => renderThreadDetail(container, myProfile, threadId, onBack);
+
+  async function postReply(body, parentPostId){
+    return supabase.from('forum_posts').insert({ thread_id: threadId, profile_id: myProfile.id, body, parent_post_id: parentPostId });
+  }
 
   document.getElementById('back-to-list').addEventListener('click', onBack);
   document.getElementById('reply-form').addEventListener('submit', async (event) => {
@@ -273,9 +305,31 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
     const fd = new FormData(event.target);
     const body = fd.get('body').trim();
     if (!body) return;
-    const { error } = await supabase.from('forum_posts').insert({ thread_id: threadId, profile_id: myProfile.id, body });
+    const { error } = await postReply(body, null);
     if (error) { alert(`Erreur : ${error.message}`); return; }
-    renderThreadDetail(container, myProfile, threadId, onBack);
+    rerender();
+  });
+
+  container.querySelectorAll('[data-action="toggle-nested-reply"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const form = container.querySelector(`.nested-reply-form[data-target-id="${btn.dataset.id}"]`);
+      if (form) form.hidden = !form.hidden;
+    });
+  });
+
+  container.querySelectorAll('.nested-reply-form').forEach(form => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const body = new FormData(event.target).get('body').trim();
+      if (!body) return;
+      const row = form.closest('.response-row');
+      // Flattening rule: replying to a depth-1 post reattaches to its own
+      // parent instead of nesting a 3rd level.
+      const effectiveParentId = row.dataset.parentId || row.dataset.postId;
+      const { error } = await postReply(body, effectiveParentId);
+      if (error) { alert(`Erreur : ${error.message}`); return; }
+      rerender();
+    });
   });
 }
 
