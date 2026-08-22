@@ -262,6 +262,28 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
 
   if (threadError || !thread) { container.innerHTML = `<p class="empty-hint">Fil introuvable.</p>`; return; }
 
+  const { data: likes } = await supabase
+    .from('forum_likes')
+    .select('id, profile_id, target_id')
+    .in('target_id', [threadId, ...(posts || []).map(p => p.id)]);
+
+  const likesByTarget = new Map();
+  (likes || []).forEach(l => {
+    if (!likesByTarget.has(l.target_id)) likesByTarget.set(l.target_id, []);
+    likesByTarget.get(l.target_id).push(l);
+  });
+
+  function likeButtonHtml(targetType, targetId){
+    const entries = likesByTarget.get(targetId) || [];
+    const iLiked = entries.some(l => l.profile_id === myProfile.id);
+    return `
+      <button type="button" class="like-btn${iLiked ? ' liked' : ''}" data-action="toggle-like" data-target-type="${targetType}" data-target-id="${targetId}">
+        <svg viewBox="0 0 24 24"><path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 5 6.5 5c2 0 3.5 1.2 4.5 2.7C12 6.2 13.5 5 15.5 5 19 5 21.5 8.5 19.5 12.5 17 16.65 12 21 12 21Z"/></svg>
+        <span>${entries.length}</span>
+      </button>
+    `;
+  }
+
   const postsById = new Map((posts || []).map(p => [p.id, p]));
   const tree = buildPostTree(posts || []);
   const postRows = tree.length ? tree.map(({ post: p, depth }) => {
@@ -278,7 +300,10 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
           </button>
         ` : ''}
         <p class="response-text">${escapeHtml(p.body)}</p>
-        <button class="btn-sm" data-action="toggle-nested-reply" data-id="${p.id}" style="margin-top:6px">Répondre</button>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          ${likeButtonHtml('forum_post', p.id)}
+          <button class="btn-sm" data-action="toggle-nested-reply" data-id="${p.id}">Répondre</button>
+        </div>
         <form class="nested-reply-form" data-target-id="${p.id}" hidden style="margin-top:8px">
           <div class="reply-quote-preview">
             <span class="reply-quote-author">Réponse à ${escapeHtml(p.profiles?.display_name || '—')}</span>
@@ -300,7 +325,8 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
       <h2 style="font-family:var(--font-display);font-weight:500;font-size:18px;margin:0">${escapeHtml(thread.title)}</h2>
       ${thread.profile_id !== myProfile.id ? reportButtonHtml('forum_thread', thread.id) : ''}
     </div>
-    <p class="empty-hint" style="margin-bottom:16px">par ${escapeHtml(thread.profiles?.display_name || '—')} · ${fmtDate(thread.created_at)}</p>
+    <p class="empty-hint" style="margin-bottom:10px">par ${escapeHtml(thread.profiles?.display_name || '—')} · ${fmtDate(thread.created_at)}</p>
+    <div style="margin-bottom:16px">${likeButtonHtml('forum_thread', thread.id)}</div>
 
     <div class="admin-list">${postRows}</div>
 
@@ -359,6 +385,19 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       target.classList.add('jump-highlight');
       setTimeout(() => target.classList.remove('jump-highlight'), 1500);
+    });
+  });
+
+  container.querySelectorAll('[data-action="toggle-like"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const targetType = btn.dataset.targetType;
+      const targetId = btn.dataset.targetId;
+      const { error } = btn.classList.contains('liked')
+        ? await supabase.from('forum_likes').delete().eq('profile_id', myProfile.id).eq('target_type', targetType).eq('target_id', targetId)
+        : await supabase.from('forum_likes').insert({ profile_id: myProfile.id, target_type: targetType, target_id: targetId });
+      if (error) { alert(`Erreur : ${error.message}`); btn.disabled = false; return; }
+      rerender();
     });
   });
 }
