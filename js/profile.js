@@ -12,7 +12,7 @@ export const PROMPT_CATALOG = [
 export async function fetchInterestsCatalog(){
   const { data, error } = await supabase
     .from('interests')
-    .select('id, name, slug, color_from, color_to')
+    .select('id, name, slug, color_from, color_to, icon')
     .order('name');
   if (error) throw error;
   return data;

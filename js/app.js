@@ -6,6 +6,7 @@ import { renderMessages } from './messages-tab.js';
 import { teardownActiveConversation } from './conversation-thread.js';
 import { fetchUnreadMessageCount } from './messaging.js';
 import { fetchPendingDmRequestCount } from './dm-requests.js';
+import { fetchUnreadNotificationCount } from './notifications.js';
 
 const headers = {
   accueil: { eyebrow: "mercredi · à ton rythme", title: "Bonjour" },
@@ -24,11 +25,12 @@ async function refreshMessagesBadge(){
   const badge = document.getElementById('messages-tab-badge');
   if (!badge || !currentProfile) return;
   try {
-    const [unreadMessages, pendingRequests] = await Promise.all([
+    const [unreadMessages, pendingRequests, unreadNotifications] = await Promise.all([
       fetchUnreadMessageCount(currentProfile.id),
-      fetchPendingDmRequestCount(currentProfile.id)
+      fetchPendingDmRequestCount(currentProfile.id),
+      fetchUnreadNotificationCount(currentProfile.id)
     ]);
-    const total = unreadMessages + pendingRequests;
+    const total = unreadMessages + pendingRequests + unreadNotifications;
     badge.textContent = total > 9 ? '9+' : String(total);
     badge.classList.toggle('hidden', total === 0);
   } catch (err) {
