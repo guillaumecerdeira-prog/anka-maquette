@@ -15,6 +15,16 @@ function authorLink(profileId, name){
   return profileId ? `<span class="author-link" data-author-id="${profileId}">${escapeHtml(name || '—')}</span>` : escapeHtml(name || '—');
 }
 
+function translateDmError(message){
+  if (message?.includes('daily_dm_quota_exceeded')) {
+    return "Tu as atteint ta limite quotidienne de nouveaux messages. Réessaie demain, ou passe en Premium pour continuer.";
+  }
+  if (message?.includes('awaiting_first_reply')) {
+    return "Tu as déjà envoyé un message ici — attends une réponse avant d'en envoyer un autre.";
+  }
+  return message;
+}
+
 export async function renderDefis(container, myProfile){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
@@ -113,7 +123,7 @@ export async function renderDefis(container, myProfile){
         alert('Demande envoyée.');
         btn.disabled = false;
       } catch (err) {
-        alert(`Erreur : ${err.message}`);
+        alert(translateDmError(err.message));
         btn.disabled = false;
       }
     });

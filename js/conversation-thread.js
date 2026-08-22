@@ -12,6 +12,13 @@ function fmtTime(iso){
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function translateMessageError(message){
+  if (message?.includes('awaiting_first_reply')) {
+    return "Tu as déjà envoyé un message ici — attends une réponse avant d'en envoyer un autre.";
+  }
+  return message;
+}
+
 // Only one thread is ever open at a time in this app — tracking the live
 // subscription here (rather than inside renderConversationThread's own
 // closure) lets app.js tear it down whenever the user switches tabs
@@ -145,7 +152,7 @@ export async function renderConversationThread(container, myProfile, conversatio
       messageList.scrollTop = messageList.scrollHeight;
       composeInput.value = '';
     } catch (err) {
-      alert(`Erreur : ${err.message}`);
+      alert(translateMessageError(err.message));
     } finally {
       submitBtn.disabled = false;
     }

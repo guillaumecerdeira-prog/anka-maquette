@@ -109,6 +109,12 @@ export async function startOpenDmConversation(targetProfileId){
   return data;
 }
 
+export async function fetchDailyDmQuota(){
+  const { data, error } = await supabase.rpc('get_daily_dm_quota').single();
+  if (error) throw error;
+  return data;
+}
+
 // Live updates for one conversation: new/updated messages (read receipts)
 // plus an ephemeral typing-indicator broadcast (never persisted to the
 // database — matches the anti-urgence spirit while still showing intent

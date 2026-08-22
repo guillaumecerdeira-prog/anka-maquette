@@ -4,7 +4,7 @@ import { fetchFriendshipStatus, sendFriendRequest, respondToFriendRequest, remov
 import { fetchIncomingConnectionRequest, respondToConnectionRequest } from './connections.js';
 import { fetchFacePhotoUrl } from './face-photo.js';
 import { reportButtonHtml, attachReportHandlers } from './reports.js';
-import { fetchConversationBetween, startOpenDmConversation } from './messaging.js';
+import { fetchConversationBetween, startOpenDmConversation, fetchDailyDmQuota } from './messaging.js';
 import { sendDmAccessRequest, fetchOutgoingDmRequestStatus } from './dm-requests.js';
 import { fetchBlockedIds, blockProfile, unblockProfile } from './blocks.js';
 import { renderConversationThread } from './conversation-thread.js';
@@ -36,24 +36,39 @@ function friendActionHtml(friendship, myId){
   return `<button class="btn btn-ghost" id="friend-remove" data-id="${friendship.id}">Amis · retirer</button>`;
 }
 
-function messageActionHtml(conversation, theirProfile, outgoingRequest, isBlocked){
+function dmQuotaLine(quota){
+  if (!quota || quota.is_unlimited) return '';
+  return `<p class="empty-hint" style="margin-top:6px">${quota.remaining} tentative${quota.remaining === 1 ? '' : 's'} de message aujourd'hui</p>`;
+}
+
+function messageActionHtml(conversation, theirProfile, outgoingRequest, isBlocked, quota){
   if (isBlocked) return '';
   if (conversation) {
     return `<button class="btn btn-ghost" id="open-conversation-btn">${conversation.status === 'blocked' ? 'Voir la conversation (bloquée)' : 'Voir la conversation'}</button>`;
   }
   if (theirProfile.dm_open) {
-    return `<button class="btn btn-ghost" id="start-dm-btn">Envoyer un message</button>`;
+    return `<div style="flex:1"><button class="btn btn-ghost" id="start-dm-btn" style="width:100%">Envoyer un message</button>${dmQuotaLine(quota)}</div>`;
   }
   if (outgoingRequest?.status === 'pending') {
     return `<button class="btn btn-ghost" disabled>Demande de message envoyée</button>`;
   }
-  return '';
+  return `<p class="empty-hint">${escapeHtml(theirProfile.display_name)} n'a pas ouvert ses DM.</p>`;
+}
+
+function translateDmError(message){
+  if (message?.includes('daily_dm_quota_exceeded')) {
+    return "Tu as atteint ta limite quotidienne de nouveaux messages. Réessaie demain, ou passe en Premium pour continuer.";
+  }
+  if (message?.includes('awaiting_first_reply')) {
+    return "Tu as déjà envoyé un message ici — attends une réponse avant d'en envoyer un autre.";
+  }
+  return message;
 }
 
 export async function renderProfileDetail(container, myProfile, theirId, onBack){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [theirProfile, friendship, wall, incomingConnection, facePhotoUrl, conversation, outgoingRequest, blockedIds] = await Promise.all([
+  const [theirProfile, friendship, wall, incomingConnection, facePhotoUrl, conversation, outgoingRequest, blockedIds, dmQuota] = await Promise.all([
     fetchProfileById(theirId),
     fetchFriendshipStatus(myProfile.id, theirId),
     fetchWall(theirId),
@@ -61,7 +76,8 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
     fetchFacePhotoUrl(theirId),
     fetchConversationBetween(myProfile.id, theirId),
     fetchOutgoingDmRequestStatus(myProfile.id, theirId),
-    fetchBlockedIds(myProfile.id)
+    fetchBlockedIds(myProfile.id),
+    fetchDailyDmQuota().catch(() => null)
   ]);
 
   if (!theirProfile) { container.innerHTML = `<p class="empty-hint">Profil introuvable.</p>`; return; }
@@ -98,29 +114,35 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
     </div>
   `).join('') : `<p class="empty-hint">Rien sur ce mur pour l'instant.</p>`;
 
+  const photosHtml = facePhotoUrl ? `
+    <div class="profile-photos">
+      <div class="profile-photo-slot">
+        <div class="profile-avatar-wrap">
+          <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
+          <div class="profile-avatar ${escapeHtml(theirProfile.avatar_style)}"><div class="avatar-shape"></div></div>
+        </div>
+        <p class="profile-photo-label">Avatar</p>
+      </div>
+      <div class="profile-photo-slot">
+        <div class="profile-avatar-wrap">
+          <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
+          <div class="profile-avatar profile-face-circle"><img src="${facePhotoUrl}" alt="Visage de ${escapeHtml(theirProfile.display_name)}"></div>
+        </div>
+        <p class="profile-photo-label">Visage</p>
+      </div>
+    </div>
+  ` : `
+    <div class="profile-avatar-wrap" style="margin:0 auto">
+      <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
+      <div class="profile-avatar ${escapeHtml(theirProfile.avatar_style)}"><div class="avatar-shape"></div></div>
+    </div>
+    <p class="profile-caption" style="margin-top:8px">${escapeHtml(theirProfile.display_name)} ne t'a pas donné accès à sa photo de visage.</p>
+  `;
+
   container.innerHTML = `
     <button class="btn-sm" id="back-btn" style="margin-bottom:14px">← Retour</button>
     <div class="profile-hero">
-      <div class="profile-photos">
-        <div class="profile-photo-slot">
-          <div class="profile-avatar-wrap">
-            <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
-            <div class="profile-avatar ${escapeHtml(theirProfile.avatar_style)}"><div class="avatar-shape"></div></div>
-          </div>
-          <p class="profile-photo-label">Avatar</p>
-        </div>
-        <div class="profile-photo-slot">
-          <div class="profile-avatar-wrap">
-            <div class="veil-ring r1"></div><div class="veil-ring r2"></div>
-            <div class="profile-avatar ${facePhotoUrl ? 'profile-face-circle' : 'profile-face-locked'}">
-              ${facePhotoUrl
-                ? `<img src="${facePhotoUrl}" alt="Visage de ${escapeHtml(theirProfile.display_name)}">`
-                : `<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`}
-            </div>
-          </div>
-          <p class="profile-photo-label">${facePhotoUrl ? 'Visage' : 'Visage caché'}</p>
-        </div>
-      </div>
+      ${photosHtml}
       <p class="profile-name" style="margin-top:14px">${escapeHtml(theirProfile.display_name)}, ${computeAge(theirProfile.birth_date)} ans</p>
     </div>
     <div class="card-actions">${friendActionHtml(friendship, myProfile.id)}</div>
@@ -131,7 +153,7 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
       </div>
     ` : ''}
     <div class="card-actions" style="margin-top:10px">
-      ${messageActionHtml(conversation, theirProfile, outgoingRequest, iBlockedThem)}
+      ${messageActionHtml(conversation, theirProfile, outgoingRequest, iBlockedThem, dmQuota)}
       <button type="button" class="btn btn-ghost" id="block-toggle-btn">${iBlockedThem ? 'Débloquer' : 'Bloquer'}</button>
     </div>
     <div class="chips" style="margin:16px 0">${chips}</div>
@@ -198,7 +220,7 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
       const conversationId = await startOpenDmConversation(theirId);
       renderConversationThread(container, myProfile, { id: conversationId, status: 'active', otherProfile: theirProfile }, rerender);
     } catch (err) {
-      alert(`Erreur : ${err.message}`);
+      alert(translateDmError(err.message));
       event.target.disabled = false;
     }
   });
@@ -211,7 +233,7 @@ export async function renderProfileDetail(container, myProfile, theirId, onBack)
         alert('Demande envoyée.');
         rerender();
       } catch (err) {
-        alert(`Erreur : ${err.message}`);
+        alert(translateDmError(err.message));
         btn.disabled = false;
       }
     });
