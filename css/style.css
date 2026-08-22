@@ -624,6 +624,7 @@
   .message-meta{ font-size:10.5px; color: var(--ink-soft); margin:4px 4px 0; }
   .typing-indicator{ font-size:11.5px; font-style:italic; color: var(--ink-soft); margin:0 0 10px; }
   #compose-form{ display:flex; gap:8px; align-items:flex-end; }
+  #compose-form[hidden]{ display:none; }
   #compose-form textarea{
     flex:1;
     min-height:44px;
@@ -736,6 +737,7 @@
   }
 
   .avatar-picker{ display:flex; gap:10px; margin-bottom:6px; }
+  .avatar-picker[hidden]{ display:none; }
   .avatar-option{
     width:52px; height:52px;
     border-radius:50%;
@@ -748,6 +750,7 @@
   .avatar-option.active{ border-color: var(--anchor); }
 
   .interest-picker{ display:flex; flex-wrap:wrap; gap:7px; margin-bottom:6px; }
+  .interest-picker[hidden]{ display:none; }
   .interest-option{
     font-size:12px;
     padding:7px 12px;
