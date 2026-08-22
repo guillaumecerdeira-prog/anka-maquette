@@ -533,6 +533,23 @@
     padding-bottom:14px;
     z-index:10;
   }
+
+  .unsaved-banner{
+    position:absolute;
+    left:0; right:0; bottom:78px;
+    z-index:15;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    background: var(--anchor);
+    color: var(--surface);
+    padding:14px 20px;
+    box-shadow: 0 -6px 16px rgba(34,48,58,0.12);
+  }
+  .unsaved-banner p{ margin:0; font-size:13px; font-weight:600; }
+  .unsaved-banner .btn-sm{ border-color:rgba(251,250,246,0.35); background:transparent; color: var(--surface); }
+  .unsaved-banner .btn-sm.primary{ background: var(--brass-soft); color: var(--anchor); border-color: var(--brass-soft); }
   .tab{
     position:relative;
     display:flex;

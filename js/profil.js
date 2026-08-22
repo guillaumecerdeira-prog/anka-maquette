@@ -1,9 +1,9 @@
-import { setDmOpen, updatePromptAnswer, deletePrompt, updateProfileInterests, fetchInterestsCatalog, updateAvatarStyle } from './profile.js';
+import { setDmOpen, updatePromptAnswer, deletePrompt, addPrompt, updateProfileInterests, fetchInterestsCatalog, updateAvatarStyle, PROMPT_CATALOG } from './profile.js';
 import { fetchWall, createPost, deletePost } from './posts.js';
 import { fetchIncomingFriendRequests, respondToFriendRequest, fetchMyFriends } from './friends.js';
 import { renderProfileDetail } from './profile-view.js';
 import { fetchFacePhotoUrl, uploadFacePhoto } from './face-photo.js';
-import { fetchRevealedTo, revealFaceTo, unrevealFaceFrom } from './face-reveals.js';
+import { renderFaceRevealPage } from './face-reveal-page.js';
 
 const AVATAR_STYLES = ['av-a', 'av-b', 'av-c', 'av-d'];
 const MAX_FACE_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -29,15 +29,13 @@ function renderPostRow(post){
 export async function renderProfil(container, myProfile, { signOut }){
   container.innerHTML = `<p class="empty-hint">Chargement…</p>`;
 
-  const [wall, incomingFriends, friends, interestsCatalog, facePhotoUrl, revealedTo] = await Promise.all([
+  const [wall, incomingFriends, friends, interestsCatalog, facePhotoUrl] = await Promise.all([
     fetchWall(myProfile.id),
     fetchIncomingFriendRequests(myProfile.id),
     fetchMyFriends(myProfile.id),
     fetchInterestsCatalog(),
-    fetchFacePhotoUrl(myProfile.id),
-    fetchRevealedTo(myProfile.id)
+    fetchFacePhotoUrl(myProfile.id)
   ]);
-  const revealedIds = new Set(revealedTo);
 
   const rerender = () => renderProfil(container, myProfile, { signOut });
 
@@ -68,6 +66,19 @@ export async function renderProfil(container, myProfile, { signOut }){
         </div>
       `).join('')
     : `<p class="empty-hint">Pas encore de réponse ajoutée.</p>`;
+
+  const usedQuestions = new Set(myProfile.prompts.map(p => p.question));
+  const availableQuestions = PROMPT_CATALOG.filter(q => !usedQuestions.has(q));
+  const addPromptHtml = availableQuestions.length ? `
+    <button type="button" class="btn-sm" id="add-prompt-toggle" style="margin-top:8px">+ Ajouter un prompt</button>
+    <form id="add-prompt-form" style="margin-top:10px" hidden>
+      <select name="question" style="width:100%;font-family:var(--font-body);font-size:12.5px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);margin-bottom:8px">
+        ${availableQuestions.map(q => `<option value="${escapeHtml(q)}">${escapeHtml(q)}</option>`).join('')}
+      </select>
+      <textarea name="answer" placeholder="Ta réponse…" required maxlength="240" style="width:100%;min-height:60px;font-family:var(--font-body);font-size:13px;padding:8px 10px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-alt);color:var(--ink);resize:vertical;margin-bottom:8px"></textarea>
+      <button type="submit" class="btn-sm primary">Enregistrer</button>
+    </form>
+  ` : '';
 
   const incomingHtml = incomingFriends.length ? `
     <p class="section-label">Demandes d'amitié</p>
@@ -131,17 +142,6 @@ export async function renderProfil(container, myProfile, { signOut }){
       </div>
       <button type="button" class="chip" id="manage-reveals-btn" style="cursor:pointer;background:none;border:1px solid var(--line)">Gérer</button>
     </div>
-    <div id="reveal-manage-panel" hidden style="margin-bottom:11px">
-      ${friends.length ? friends.map(f => `
-        <div class="setting-row">
-          <div style="display:flex;align-items:center;gap:10px">
-            <div class="avatar ${escapeHtml(f.avatar_style)}" style="width:32px;height:32px"><div class="avatar-shape"></div></div>
-            <p class="setting-label" style="margin:0">${escapeHtml(f.display_name)}</p>
-          </div>
-          <div class="toggle ${revealedIds.has(f.id) ? '' : 'off'}" data-action="toggle-reveal" data-id="${f.id}"></div>
-        </div>
-      `).join('') : `<p class="empty-hint">Ajoute des amis pour pouvoir leur révéler ton visage.</p>`}
-    </div>
 
     <div class="setting-row">
       <div>
@@ -156,6 +156,7 @@ export async function renderProfil(container, myProfile, { signOut }){
 
     <p class="section-label">Quelques mots</p>
     ${prompts}
+    ${addPromptHtml}
 
     <p class="section-label" style="margin-top:14px">Centres d'intérêt</p>
     <div class="chips" id="interests-chips">${chips}</div>
@@ -164,10 +165,6 @@ export async function renderProfil(container, myProfile, { signOut }){
       <button type="button" class="btn-sm" id="edit-interests-btn">Modifier</button>
       <button type="button" class="btn-sm" id="save-interests-btn" hidden>Enregistrer</button>
       <button type="button" class="btn-sm" id="cancel-interests-btn" hidden>Annuler</button>
-    </div>
-
-    <div class="trust-note">
-      <p>Débloquer ton visage est un signe de confiance. Tu peux le retirer à tout moment.</p>
     </div>
 
     <p class="section-label">Ton mur</p>
@@ -232,33 +229,7 @@ export async function renderProfil(container, myProfile, { signOut }){
   });
 
   document.getElementById('manage-reveals-btn').addEventListener('click', () => {
-    const panel = document.getElementById('reveal-manage-panel');
-    panel.hidden = !panel.hidden;
-  });
-
-  container.querySelectorAll('[data-action="toggle-reveal"]').forEach(toggle => {
-    toggle.addEventListener('click', async () => {
-      const friendId = toggle.dataset.id;
-      const wasRevealed = !toggle.classList.contains('off');
-      const next = !wasRevealed;
-      toggle.classList.toggle('off', !next);
-      myProfile.faceRevealCount += next ? 1 : -1;
-      document.getElementById('face-reveal-count').textContent =
-        `Pour ${myProfile.faceRevealCount} personne${myProfile.faceRevealCount === 1 ? '' : 's'}`;
-      try {
-        if (next) {
-          await revealFaceTo(myProfile.id, friendId);
-        } else {
-          await unrevealFaceFrom(myProfile.id, friendId);
-        }
-      } catch (err) {
-        toggle.classList.toggle('off', next);
-        myProfile.faceRevealCount += next ? -1 : 1;
-        document.getElementById('face-reveal-count').textContent =
-          `Pour ${myProfile.faceRevealCount} personne${myProfile.faceRevealCount === 1 ? '' : 's'}`;
-        alert(`Erreur : ${err.message}`);
-      }
-    });
+    renderFaceRevealPage(container, myProfile, rerender);
   });
 
   const dmToggle = document.getElementById('dm-toggle');
@@ -356,6 +327,27 @@ export async function renderProfil(container, myProfile, { signOut }){
         btn.disabled = false;
       }
     });
+  });
+
+  const addPromptToggle = document.getElementById('add-prompt-toggle');
+  const addPromptForm = document.getElementById('add-prompt-form');
+  addPromptToggle?.addEventListener('click', () => { addPromptForm.hidden = !addPromptForm.hidden; });
+  addPromptForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const question = fd.get('question');
+    const answer = fd.get('answer').trim();
+    if (!answer) return;
+    const submitBtn = addPromptForm.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    try {
+      const created = await addPrompt(myProfile.id, question, answer, myProfile.prompts.length);
+      myProfile.prompts.push(created);
+      rerender();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+      submitBtn.disabled = false;
+    }
   });
 
   const interestsChips = document.getElementById('interests-chips');

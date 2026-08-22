@@ -98,6 +98,16 @@ export async function deletePrompt(promptId){
   if (error) throw error;
 }
 
+export async function addPrompt(profileId, question, answer, position){
+  const { data, error } = await supabase
+    .from('profile_prompts')
+    .insert({ profile_id: profileId, question, answer, position })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function updateAvatarStyle(profileId, avatarStyle){
   const { error } = await supabase.from('profiles').update({ avatar_style: avatarStyle }).eq('id', profileId);
   if (error) throw error;
