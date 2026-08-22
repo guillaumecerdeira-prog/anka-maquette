@@ -15,6 +15,7 @@ const appStage = document.getElementById('app-stage');
 const supervisorStage = document.getElementById('supervisor-stage');
 const modeSwitchBtn = document.getElementById('mode-switch');
 const returnSupervisorBtn = document.getElementById('return-supervisor-btn');
+const notifBellBtn = document.getElementById('notif-bell-btn');
 
 const form = document.getElementById('auth-form');
 const emailInput = document.getElementById('auth-email');
@@ -170,6 +171,7 @@ async function enterApp(session){
 
   if (!profile) {
     hideAllGates();
+    notifBellBtn.classList.add('hidden');
     onboardingGate.classList.remove('hidden');
     await resetOnboardingForm();
     return;
@@ -178,6 +180,7 @@ async function enterApp(session){
   const isSuspended = profile.suspended_until && new Date(profile.suspended_until) > new Date();
   if (profile.is_banned || isSuspended) {
     hideAllGates();
+    notifBellBtn.classList.add('hidden');
     bannedGate.classList.remove('hidden');
     bannedTitle.textContent = profile.is_banned ? 'Compte banni' : 'Compte suspendu';
     bannedMessage.textContent = profile.is_banned
@@ -190,6 +193,7 @@ async function enterApp(session){
   currentProfile = profile;
 
   hideAllGates();
+  notifBellBtn.classList.remove('hidden');
   modeSwitchBtn.classList.toggle('hidden', !profile.is_supervisor);
   viewMode = (profile.is_supervisor && sessionStorage.getItem(VIEW_MODE_KEY) === 'supervisor') ? 'supervisor' : 'user';
   applyViewMode(profile);
@@ -210,6 +214,7 @@ function handleSession(session){
     sessionStorage.removeItem(VIEW_MODE_KEY);
     updateReturnButton(null);
     hideAllGates();
+    notifBellBtn.classList.add('hidden');
     authGate.classList.remove('hidden');
     form.reset();
   }

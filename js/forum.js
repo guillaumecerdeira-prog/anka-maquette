@@ -1,6 +1,20 @@
 import { supabase } from './supabase-client.js';
 import { fetchInterestsCatalog } from './profile.js';
 import { reportButtonHtml, attachReportHandlers } from './reports.js';
+import { renderProfileDetail } from './profile-view.js';
+
+function authorLink(profileId, name){
+  return profileId ? `<span class="author-link" data-author-id="${profileId}">${escapeHtml(name || '—')}</span>` : escapeHtml(name || '—');
+}
+
+function attachAuthorLinks(container, myProfile, onBack){
+  container.querySelectorAll('[data-author-id]').forEach(el => {
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
+      renderProfileDetail(container, myProfile, el.dataset.authorId, onBack);
+    });
+  });
+}
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -290,9 +304,9 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
     const quoted = p.reply_to_post_id ? postsById.get(p.reply_to_post_id) : null;
     return `
     <div class="response-row" id="post-${p.id}" data-post-id="${p.id}" data-parent-id="${p.parent_post_id || ''}">
-      <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0"><div class="avatar-shape"></div></div>
+      <div class="avatar ${escapeHtml(p.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0;cursor:pointer" data-author-id="${p.profile_id}"><div class="avatar-shape"></div></div>
       <div style="flex:1;min-width:0">
-        <p class="response-name">${escapeHtml(p.profiles?.display_name || '—')} <span class="empty-hint">· ${fmtDate(p.created_at)}</span></p>
+        <p class="response-name">${authorLink(p.profile_id, p.profiles?.display_name)} <span class="empty-hint">· ${fmtDate(p.created_at)}</span></p>
         ${quoted ? `
           <button type="button" class="reply-quote" data-jump-to="${quoted.id}">
             <span class="reply-quote-author">↩ ${escapeHtml(quoted.profiles?.display_name || '—')}</span>
@@ -325,7 +339,7 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
       <h2 style="font-family:var(--font-display);font-weight:500;font-size:18px;margin:0">${escapeHtml(thread.title)}</h2>
       ${thread.profile_id !== myProfile.id ? reportButtonHtml('forum_thread', thread.id) : ''}
     </div>
-    <p class="empty-hint" style="margin-bottom:10px">par ${escapeHtml(thread.profiles?.display_name || '—')} · ${fmtDate(thread.created_at)}</p>
+    <p class="empty-hint" style="margin-bottom:10px">par ${authorLink(thread.profile_id, thread.profiles?.display_name)} · ${fmtDate(thread.created_at)}</p>
     <div style="margin-bottom:16px">${likeButtonHtml('forum_thread', thread.id)}</div>
 
     <div class="admin-list">${postRows}</div>
@@ -337,6 +351,7 @@ async function renderThreadDetail(container, myProfile, threadId, onBack){
   `;
 
   attachReportHandlers(container, myProfile);
+  attachAuthorLinks(container, myProfile, () => renderThreadDetail(container, myProfile, threadId, onBack));
 
   const rerender = () => renderThreadDetail(container, myProfile, threadId, onBack);
 

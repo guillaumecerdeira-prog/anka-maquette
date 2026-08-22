@@ -9,7 +9,7 @@ import { fetchPendingDmRequestCount } from './dm-requests.js';
 import { initNotificationCenter } from './notification-center.js';
 
 const headers = {
-  accueil: { eyebrow: "mercredi · à ton rythme", title: "Bonjour" },
+  accueil: { eyebrow: "", title: "Bonjour" },
   forum: { eyebrow: "des espaces calmes pour discuter", title: "Forum" },
   defis: { eyebrow: "cette semaine", title: "Défis" },
   messages: { eyebrow: "à ton rythme", title: "Messages" },
@@ -48,7 +48,7 @@ async function render(tabName, options = {}){
   const contentEl = document.getElementById('content');
   const tabs = document.querySelectorAll('.tab');
   const h = headers[tabName];
-  headerTextEl.innerHTML = `<p class="eyebrow">${h.eyebrow}</p><h1>${h.title}</h1>`;
+  headerTextEl.innerHTML = `${h.eyebrow ? `<p class="eyebrow">${h.eyebrow}</p>` : ''}<h1>${h.title}</h1>`;
   contentEl.scrollTop = 0;
   tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
 

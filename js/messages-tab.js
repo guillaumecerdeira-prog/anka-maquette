@@ -1,6 +1,7 @@
 import { fetchMyConversations } from './messaging.js';
 import { fetchIncomingDmRequests, respondDmAccessRequest } from './dm-requests.js';
 import { renderConversationThread } from './conversation-thread.js';
+import { renderProfileDetail } from './profile-view.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -43,9 +44,9 @@ export async function renderMessages(container, myProfile){
 
   const conversationsHtml = conversations.length ? conversations.map(c => `
     <div class="admin-row" data-action="open-conversation" data-id="${c.id}" style="cursor:pointer">
-      <div class="avatar ${escapeHtml(c.otherProfile.avatar_style)}" style="width:44px;height:44px;flex-shrink:0"><div class="avatar-shape"></div></div>
+      <div class="avatar ${escapeHtml(c.otherProfile.avatar_style)}" style="width:44px;height:44px;flex-shrink:0;cursor:pointer" data-action="view-profile" data-id="${c.otherProfile.id}"><div class="avatar-shape"></div></div>
       <div class="admin-row-main" style="margin-left:10px;min-width:0">
-        <p class="admin-row-title">${escapeHtml(c.otherProfile.display_name)}${c.status === 'blocked' ? ' <span class="badge">Bloqué</span>' : ''}</p>
+        <p class="admin-row-title" data-action="view-profile" data-id="${c.otherProfile.id}" style="cursor:pointer;display:inline-block">${escapeHtml(c.otherProfile.display_name)}</p>${c.status === 'blocked' ? ' <span class="badge">Bloqué</span>' : ''}
         <p class="admin-row-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.lastMessage ? escapeHtml(c.lastMessage.body) : 'Dites bonjour !'}</p>
       </div>
       ${c.unreadCount ? `<span class="unread-badge">${c.unreadCount}</span>` : ''}
@@ -86,6 +87,12 @@ export async function renderMessages(container, myProfile){
     row.addEventListener('click', () => {
       const conversation = conversations.find(c => c.id === row.dataset.id);
       if (conversation) renderConversationThread(container, myProfile, conversation, rerender);
+    });
+  });
+  container.querySelectorAll('[data-action="view-profile"]').forEach(el => {
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
+      renderProfileDetail(container, myProfile, el.dataset.id, rerender);
     });
   });
 }

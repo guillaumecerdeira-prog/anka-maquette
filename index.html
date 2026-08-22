@@ -15,6 +15,10 @@
 <body>
 
 <div class="utility-bar">
+  <button type="button" class="notif-bell hidden" id="notif-bell-btn" title="Notifications">
+    <svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8Z"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/></svg>
+    <span class="tab-badge hidden" id="notif-badge"></span>
+  </button>
   <button class="mode-switch hidden" id="mode-switch" type="button" title="Basculer vers le mode Superviseur">
     <svg class="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20c1.4-3.8 4.6-5.7 7.5-5.7s6.1 1.9 7.5 5.7"/></svg>
     <svg class="icon-supervisor" viewBox="0 0 24 24" hidden><path d="M12 3.5 19 6.3v4.9c0 5.1-3.3 8.7-7 10-3.7-1.3-7-4.9-7-10V6.3L12 3.5Z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -93,16 +97,12 @@
 
 <div class="hidden" id="app-stage">
 
-  <!-- HEADER (text is dynamic, bell is persistent across tabs) -->
+  <!-- HEADER (dynamic) -->
   <div class="app-header" id="header">
     <div id="header-text">
-      <p class="eyebrow">mercredi · à ton rythme</p>
+      <p class="eyebrow"></p>
       <h1>Bonjour, Léa</h1>
     </div>
-    <button type="button" class="notif-bell" id="notif-bell-btn" title="Notifications">
-      <svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 12 6 8Z"/><path d="M9.5 17a2.5 2.5 0 0 0 5 0"/></svg>
-      <span class="tab-badge hidden" id="notif-badge"></span>
-    </button>
   </div>
 
   <!-- CONTENT (dynamic) -->

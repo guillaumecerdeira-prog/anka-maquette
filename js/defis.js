@@ -3,11 +3,16 @@ import { reportButtonHtml, attachReportHandlers } from './reports.js';
 import { fetchConversationBetween, startOpenDmConversation } from './messaging.js';
 import { sendDmAccessRequest } from './dm-requests.js';
 import { renderConversationThread } from './conversation-thread.js';
+import { renderProfileDetail } from './profile-view.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
+}
+
+function authorLink(profileId, name){
+  return profileId ? `<span class="author-link" data-author-id="${profileId}">${escapeHtml(name || '—')}</span>` : escapeHtml(name || '—');
 }
 
 export async function renderDefis(container, myProfile){
@@ -45,9 +50,9 @@ export async function renderDefis(container, myProfile){
     const list = responsesByChallenge.get(c.id) || [];
     const rows = list.length ? list.map(r => `
       <div class="response-row">
-        <div class="avatar ${escapeHtml(r.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0"><div class="avatar-shape"></div></div>
+        <div class="avatar ${escapeHtml(r.profiles?.avatar_style || 'av-a')}" style="width:36px;height:36px;flex-shrink:0;cursor:pointer" data-author-id="${r.profile_id}"><div class="avatar-shape"></div></div>
         <div style="flex:1;min-width:0">
-          <p class="response-name">${escapeHtml(r.profiles?.display_name || '—')}</p>
+          <p class="response-name">${authorLink(r.profile_id, r.profiles?.display_name)}</p>
           <p class="response-text">${escapeHtml(r.text || '')}</p>
         </div>
         ${r.profile_id !== myProfile.id ? `
@@ -76,6 +81,13 @@ export async function renderDefis(container, myProfile){
   }).join('');
 
   attachReportHandlers(container, myProfile);
+
+  container.querySelectorAll('[data-author-id]').forEach(el => {
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
+      renderProfileDetail(container, myProfile, el.dataset.authorId, () => renderDefis(container, myProfile));
+    });
+  });
 
   container.querySelectorAll('[data-action="message-response"]').forEach(btn => {
     btn.addEventListener('click', async () => {

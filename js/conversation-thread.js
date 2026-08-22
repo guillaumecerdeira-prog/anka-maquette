@@ -1,5 +1,6 @@
 import { fetchMessages, sendMessage, markConversationRead, subscribeToConversation } from './messaging.js';
 import { fetchBlockedIds, blockProfile, unblockProfile } from './blocks.js';
+import { renderProfileDetail } from './profile-view.js';
 
 function escapeHtml(str){
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -51,8 +52,8 @@ export async function renderConversationThread(container, myProfile, conversatio
   container.innerHTML = `
     <button class="btn-sm" id="back-btn" style="margin-bottom:14px">← Retour</button>
     <div class="thread-header">
-      <div class="avatar ${escapeHtml(conversation.otherProfile.avatar_style)}" style="width:40px;height:40px;flex-shrink:0"><div class="avatar-shape"></div></div>
-      <p class="thread-header-name">${escapeHtml(conversation.otherProfile.display_name)}</p>
+      <div class="avatar ${escapeHtml(conversation.otherProfile.avatar_style)}" style="width:40px;height:40px;flex-shrink:0;cursor:pointer" id="thread-header-avatar"><div class="avatar-shape"></div></div>
+      <p class="thread-header-name" id="thread-header-name" style="cursor:pointer">${escapeHtml(conversation.otherProfile.display_name)}</p>
       <button type="button" class="btn-sm ${iBlockedThem ? '' : 'danger'}" id="block-toggle-btn">${iBlockedThem ? 'Débloquer' : 'Bloquer'}</button>
     </div>
     <div id="message-list" class="message-list">
@@ -73,6 +74,14 @@ export async function renderConversationThread(container, myProfile, conversatio
     teardownActiveConversation();
     onBack();
   });
+
+  const openProfile = () => {
+    renderProfileDetail(container, myProfile, conversation.otherProfile.id, () => {
+      renderConversationThread(container, myProfile, conversation, onBack);
+    });
+  };
+  document.getElementById('thread-header-avatar').addEventListener('click', openProfile);
+  document.getElementById('thread-header-name').addEventListener('click', openProfile);
 
   document.getElementById('block-toggle-btn').addEventListener('click', async (event) => {
     event.target.disabled = true;
